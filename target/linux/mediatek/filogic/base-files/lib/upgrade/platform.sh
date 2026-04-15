@@ -120,6 +120,7 @@ platform_do_upgrade() {
 	routerich,ax3000-ubootmod|\
 	routerich,be7200|\
 	snr,snr-cpe-ax2|\
+	supergateway,s20p|\
 	tplink,tl-7dr7230-v1|\
 	tplink,tl-7dr7230-v2|\
 	tplink,tl-7dr7250-v1|\
@@ -394,7 +395,8 @@ platform_copy_config() {
 	cmcc,rax3000m|\
 	cmcc,rax3000me|\
 	gatonetworks,gdsp|\
-	mediatek,mt7988a-rfb)
+	mediatek,mt7988a-rfb|\
+	supergateway,s20p)
 		if [ "$CI_METHOD" = "emmc" ]; then
 			emmc_copy_config
 		fi

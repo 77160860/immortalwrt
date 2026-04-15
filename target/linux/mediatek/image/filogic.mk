@@ -897,6 +897,18 @@ define Device/cetron_ct3003-ubootmod
 endef
 TARGET_DEVICES += cetron_ct3003-ubootmod
 
+define Device/supergateway_s20p
+  DEVICE_VENDOR := Super Gateway
+  DEVICE_MODEL := S20P
+  DEVICE_DTS := mt7986a-supergateway-s20p
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
+  kmod-usb3 kmod-mmc kmod-fs-f2fs kmod-fs-ext4 kmod-fs-vfat \
+  mkf2fs f2fsck e2fsprogs blkid blockdev losetup automount
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += supergateway_s20p
+
 define Device/cmcc_a10-stock
   DEVICE_VENDOR := CMCC
   DEVICE_MODEL := A10

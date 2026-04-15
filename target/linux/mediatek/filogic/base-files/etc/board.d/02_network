@@ -187,6 +187,9 @@ mediatek_setup_interfaces()
 	mercusys,mr90x-v1-ubi)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2" eth1
 		;;
+	supergateway,s20p)
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4 lan5 lan6" eth1
+		;;
 	tenda,be12-pro)
 		ucidef_set_interfaces_lan_wan "lan3 lan4 lan5 eth1" eth2
 		;;
