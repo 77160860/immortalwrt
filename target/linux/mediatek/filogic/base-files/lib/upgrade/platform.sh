@@ -432,6 +432,8 @@ platform_copy_config() {
 	cmcc,rax3000me|\
 	gatonetworks,gdsp|\
 	mediatek,mt7988a-rfb|\
+	supergateway,s20l|\
+	supergateway,s20m|\
 	supergateway,s20p)
 		if [ "$CI_METHOD" = "emmc" ]; then
 			emmc_copy_config

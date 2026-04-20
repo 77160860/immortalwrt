@@ -8,12 +8,11 @@
 #include "mt7986a.dtsi"
 
 / {
-	model = "Super Gateway S20P";
-	compatible = "supergateway,s20p", "mediatek,mt7986a";
+	model = "Super Gateway S20M";
+	compatible = "supergateway,s20m", "mediatek,mt7986a";
 
 	aliases {
 		serial0 = &uart0;
-		label-mac-device = &gmac1;
 		led-boot = &sys_led;
 		led-failsafe = &sys_led;
 		led-running = &sys_led;
@@ -41,18 +40,6 @@
 
 	gpio-leds {
 		compatible = "gpio-leds";
-
-		wlan5g_led: wlan5g-led {
-			color = <LED_COLOR_ID_BLUE>;
-			function = LED_FUNCTION_WLAN_5GHZ;
-			gpios = <&pio 2 GPIO_ACTIVE_LOW>;
-		};
-
-		wlan2g_led: wlan2g-led {
-			color = <LED_COLOR_ID_BLUE>;
-			function = LED_FUNCTION_WLAN_2GHZ;
-			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
-		};
 
 		sys_led: sys-led {
 			color = <LED_COLOR_ID_BLUE>;
@@ -107,46 +94,9 @@
 		};
 	};
 
-	gmac1: mac@1 {
-		compatible = "mediatek,eth-mac";
-		reg = <1>;
-		nvmem-cells = <&macaddr_factory_24 0>;
-		nvmem-cell-names = "mac-address";
-		phy-mode = "2500base-x";
-		phy-handle = <&phy7>;
-	};
-
 	mdio: mdio-bus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-
-		phy5: ethernet-phy@5 {
-			compatible = "ethernet-phy-ieee802.3-c45";
-			reg = <5>;
-			reset-assert-us = <100000>;
-			reset-deassert-us = <100000>;
-			reset-gpios = <&pio 48 GPIO_ACTIVE_LOW>;
-			interrupt-parent = <&pio>;
-			interrupts = <47 IRQ_TYPE_LEVEL_LOW>;
-			realtek,aldps-enable;
-			realtek,led-link-select = <0xa7 0x03 0x0>; /* led0 at 10/100/1000/2.5G/(2.5G lite), led1 at 10/100 */
-			realtek,led-act-select = <0x321b>; /* led on time = 400ms, duty = 12.5%, freq = 60ms, Enable 10M LPI, modeA, led0 led1 act */
-			/*realtek,led-polarity-select = <0x0018>; */
-		};
-
-		phy7: ethernet-phy@7 {
-			compatible = "ethernet-phy-ieee802.3-c45";
-			reg = <7>;
-			reset-assert-us = <100000>;
-			reset-deassert-us = <100000>;
-			reset-gpios = <&pio 6 GPIO_ACTIVE_LOW>;
-			interrupt-parent = <&pio>;
-			interrupts = <46 IRQ_TYPE_LEVEL_LOW>;
-			realtek,aldps-enable;
-			realtek,led-link-select = <0xa7 0x03 0x0>; /* led0 at 10/100/1000/2.5G/(2.5G lite), led1 at 10/100 */
-			realtek,led-act-select = <0x321b>; /* led on time = 400ms, duty = 12.5%, freq = 60ms, Enable 10M LPI, modeA, led0 led1 act */
-			/*realtek,led-polarity-select = <0x0018>; */
-		};
 
 		switch: switch@1f {
 			compatible = "mediatek,mt7531";
@@ -163,7 +113,10 @@
 
 				port@0 {
 					reg = <0>;
-					label = "lan5";
+					label = "wan";
+
+					nvmem-cells = <&macaddr_factory_24 0>;
+					nvmem-cell-names = "mac-address";
 				};
 
 				port@1 {
@@ -184,13 +137,6 @@
 				port@4 {
 					reg = <4>;
 					label = "lan1";
-				};
-
-				port@5 {
-					reg = <5>;
-					label = "lan6";
-					phy-mode = "2500base-x";
-					phy-handle = <&phy5>;
 				};
 
 				port@6 {
@@ -349,62 +295,6 @@
 			function = "pcie";
 			groups = "pcie_pereset";
 		};
-	};
-
-	wf_2g_5g_pins: wf_2g_5g-pins {
-		mux {
-			function = "wifi";
-			groups = "wf_2g", "wf_5g";
-		};
-		conf {
-			pins = "WF0_HB1", "WF0_HB2", "WF0_HB3", "WF0_HB4",
-			       "WF0_HB0", "WF0_HB0_B", "WF0_HB5", "WF0_HB6",
-			       "WF0_HB7", "WF0_HB8", "WF0_HB9", "WF0_HB10",
-			       "WF0_TOP_CLK", "WF0_TOP_DATA", "WF1_HB1",
-			       "WF1_HB2", "WF1_HB3", "WF1_HB4", "WF1_HB0",
-			       "WF1_HB5", "WF1_HB6", "WF1_HB7", "WF1_HB8",
-			       "WF1_TOP_CLK", "WF1_TOP_DATA";
-			drive-strength = <4>;
-		};
-	};
-
-	wf_dbdc_pins: wf-dbdc-pins {
-		mux {
-			function = "wifi";
-			groups = "wf_dbdc";
-		};
-		conf {
-			pins = "WF0_HB1", "WF0_HB2", "WF0_HB3", "WF0_HB4",
-				"WF0_HB0", "WF0_HB0_B", "WF0_HB5", "WF0_HB6",
-				"WF0_HB7", "WF0_HB8", "WF0_HB9", "WF0_HB10",
-				"WF0_TOP_CLK", "WF0_TOP_DATA", "WF1_HB1",
-				"WF1_HB2", "WF1_HB3", "WF1_HB4", "WF1_HB0",
-				"WF1_HB5", "WF1_HB6", "WF1_HB7", "WF1_HB8",
-				"WF1_TOP_CLK", "WF1_TOP_DATA";
-			drive-strength = <4>;
-		};
-	};
-};
-
-&wifi {
-	nvmem-cells = <&eeprom_factory_0>;
-	nvmem-cell-names = "eeprom";
-	pinctrl-names = "default", "dbdc";
-	pinctrl-0 = <&wf_2g_5g_pins>;
-	pinctrl-1 = <&wf_dbdc_pins>;
-	status = "okay";
-
-	band@0 {
-		reg = <0>;
-		nvmem-cells = <&macaddr_factory_4 0>;
-		nvmem-cell-names = "mac-address";
-
-	};
-
-	band@1 {
-		reg = <1>;
-		nvmem-cells = <&macaddr_factory_30 0>;
-		nvmem-cell-names = "mac-address";
 	};
 };
 

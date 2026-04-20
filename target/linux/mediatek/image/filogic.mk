@@ -907,15 +907,35 @@ define Device/cetron_ct3003-ubootmod
 endef
 TARGET_DEVICES += cetron_ct3003-ubootmod
 
-define Device/supergateway_s20p
+define Device/supergateway_s20-common
   DEVICE_VENDOR := Super Gateway
-  DEVICE_MODEL := S20P
-  DEVICE_DTS := mt7986a-supergateway-s20p
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
-  kmod-usb3 kmod-mmc kmod-fs-f2fs kmod-fs-ext4 kmod-fs-vfat \
-  mkf2fs f2fsck e2fsprogs blkid blockdev losetup automount
+    kmod-usb3 kmod-mmc kmod-fs-f2fs kmod-fs-ext4 kmod-fs-vfat \
+    mkf2fs f2fsck e2fsprogs blkid blockdev losetup automount
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += supergateway_s20-common
+
+define Device/supergateway_s20l
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20L
+  DEVICE_DTS := mt7986a-supergateway-s20l
+endef
+TARGET_DEVICES += supergateway_s20l
+
+define Device/supergateway_s20m
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20M
+  DEVICE_DTS := mt7986a-supergateway-s20m
+  DEVICE_PACKAGES += -kmod-mac80211 -kmod-mt76-connac -kmod-mt76-core -kmod-mt7915e -hostapd-common -wpad-openssl
+endef
+TARGET_DEVICES += supergateway_s20m
+
+define Device/supergateway_s20p
+  $(call Device/supergateway_s20-common)
+  DEVICE_MODEL := S20P
+  DEVICE_DTS := mt7986a-supergateway-s20p
 endef
 TARGET_DEVICES += supergateway_s20p
 
