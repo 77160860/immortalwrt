@@ -4,6 +4,6 @@
 #include "mt7981b-tplink-wma301-v2-common.dtsi"
 
 / {
-	model = "TP-Link WMA301 v2.0 (OpenWrt U-Boot layout)";
+	model = "TP-Link WMA301 v2.0";
 	compatible = "tplink,wma301-v2-ubootmod", "mediatek,mt7981";
 };
