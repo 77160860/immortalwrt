@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/dts-v1/;
+
+#include "mt7981b-zbtlink-zbt-z8103ax.dtsi"
+
+/ {
+	model = "Zbtlink ZBT-Z8103AX";
+	compatible = "zbtlink,zbt-z8103ax", "mediatek,mt7981";
+};
+
+&chosen {
+	bootargs = "earlycon=uart8250,mmio32,0x11002000 console=ttyS0,115200n8 loglevel=8";
+};
+
+&partitions {
+	partition@580000 {
+		label = "ubi";
+		reg = <0x580000 0x4000000>;
+	};
+};
