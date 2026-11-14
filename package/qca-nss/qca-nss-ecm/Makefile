@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=qca-nss-ecm
-PKG_RELEASE:=9
+PKG_RELEASE:=10
 
 PKG_SOURCE_URL:=https://git.codelinaro.org/clo/qsdk/oss/lklm/qca-nss-ecm.git
 PKG_SOURCE_PROTO:=git
@@ -16,6 +16,7 @@ PKG_FLAGS:=nonshared
 PKG_BUILD_FLAGS:=gc-sections lto
 
 PKG_CONFIG_DEPENDS:= \
+	CONFIG_NSS_FIRMWARE_VERSION_11_4 \
 	CONFIG_TARGET_SUBTARGET \
 	CONFIG_BRIDGE_VLAN_FILTERING \
 	CONFIG_IPV6 \
@@ -88,8 +89,12 @@ endef
 EXTRA_CFLAGS += \
 	-I$(STAGING_DIR)/usr/include/qca-nss-drv \
 	-I$(STAGING_DIR)/usr/include/qca-mcs \
-	-I$(STAGING_DIR)/usr/include/nat46 \
-	-DNSS_FIRMWARE_VERSION_12_5
+	-I$(STAGING_DIR)/usr/include/nat46
+
+# Firmware selection must also select the matching NSS message ABI.
+ifneq ($(CONFIG_NSS_FIRMWARE_VERSION_11_4),y)
+EXTRA_CFLAGS += -DNSS_FIRMWARE_VERSION_12_5
+endif
 
 ECM_SUBTARGET:=$(subst ",,$(CONFIG_TARGET_SUBTARGET))
 ECM_MAKE_OPTS:=

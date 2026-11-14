@@ -1,0 +1,182 @@
+From: OpenWrt Build System <openwrt@localhost>
+Subject: [PATCH] NSS11.4: rebase allocated NAPI devices onto Linux6.18
+
+Applies after the 41 pinned qosmio patches-11.4 to source53e5863.
+Keeps the 11.4 firmware ABI. The upstream DMA, recycler, sysctl and
+platform-remove adaptations are retained rather than copied from13.1.
+Allocated dummy netdevices require a pointer throughout HAL, matched
+probe/remove release and NAPI cleanup when request_irq() fails.
+Terminate the OF match table for module-device-table validation.
+Explicitly restrict this experimental source arm to Linux6.18.x.
+Source application tested; NOT compiled or runtime validated.
+
+--- a/compat.h
++++ b/compat.h
+@@ -3,6 +3,10 @@
+ #define _COMPAT_H
+ 
+ #include <linux/version.h>
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
++#error "Experimental NSS11.4 main port targets Linux6.18 only; review compatibility before changing kernels"
++#endif
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+ #include <linux/vmalloc.h>
+--- a/nss_core.h
++++ b/nss_core.h
+@@ -457,7 +457,7 @@
+ 	struct nss_top_instance *nss_top;
+ 					/* Back pointer to NSS Top */
+ 	struct device *dev;		/* Pointer to the original device from probe */
+-	struct net_device napi_ndev;    /* Dummy_netdev for NAPI */
++	struct net_device *napi_ndev;   /* Allocated dummy netdev for Linux6.18 NAPI */
+ 	uint32_t id;			/* Core ID for this instance */
+ 	void __iomem *nmap;		/* Pointer to NSS CSM registers */
+ 	void __iomem *vmap;		/* Virt mem pointer to virtual register map */
+@@ -504,6 +504,8 @@
+ 	uint32_t magic;
+ 					/* Magic protection */
+ };
++
++#define NSS_CTX_NAPI_NDEV(ctx) ((ctx)->napi_ndev)
+ 
+ /*
+  * NSS stats read context
+--- a/nss_hal/fsm9010/nss_hal_pvt.c
++++ b/nss_hal/fsm9010/nss_hal_pvt.c
+@@ -291,7 +291,7 @@
+ 	}
+ 
+ 	int_ctx->irq = npd->irq[irq_num];
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, nss_core_handle_napi, 64);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, nss_core_handle_napi, 64);
+ 	return 0;
+ }
+ 
+--- a/nss_hal/ipq50xx/nss_hal_pvt.c
++++ b/nss_hal/ipq50xx/nss_hal_pvt.c
+@@ -598,11 +598,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 	int_ctx->irq = irq;
+--- a/nss_hal/ipq60xx/nss_hal_pvt.c
++++ b/nss_hal/ipq60xx/nss_hal_pvt.c
+@@ -706,11 +706,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 
+--- a/nss_hal/ipq806x/nss_hal_pvt.c
++++ b/nss_hal/ipq806x/nss_hal_pvt.c
+@@ -1185,7 +1185,7 @@
+ 	}
+ 
+ 	int_ctx->irq = npd->irq[irq_num];
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, nss_core_handle_napi, 64);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, nss_core_handle_napi, 64);
+ 
+ 	return 0;
+ }
+--- a/nss_hal/ipq807x/nss_hal_pvt.c
++++ b/nss_hal/ipq807x/nss_hal_pvt.c
+@@ -748,11 +748,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 	int_ctx->irq = irq;
+--- a/nss_hal/nss_hal.c
++++ b/nss_hal/nss_hal.c
+@@ -25,6 +25,7 @@
+ #include <linux/of.h>
+ #include <linux/irq.h>
+ #include <linux/ethtool.h>
++#include <linux/netdevice.h>
+ 
+ #include "nss_hal.h"
+ #include "nss_arch.h"
+@@ -57,6 +58,9 @@
+ 				      const unsigned char *sequence,
+ 				      size_t sequence_size)
+ {
++	if (sequence_size > buffer_size)
++		return NULL;
++
+ 	for (size_t i = 0; i <= buffer_size - sequence_size; i++) {
+ 		if (memcmp(buffer + i, sequence, sequence_size) == 0) {
+ 			return (unsigned char *)(buffer + i);
+@@ -356,10 +360,14 @@
+ 	/*
+ 	 * Initialize the dummy netdevice.
+ 	 */
+-	init_dummy_netdev(&nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = alloc_netdev_dummy(0);
++	if (!nss_ctx->napi_ndev) {
++		err = -ENOMEM;
++		goto err_init;
++	}
+ 
+ 	for (i = 0; i < npd->num_irq; i++) {
+-		err = nss_hal_register_irq(nss_ctx, npd, &nss_ctx->napi_ndev, i);
++		err = nss_hal_register_irq(nss_ctx, npd, NSS_CTX_NAPI_NDEV(nss_ctx), i);
+ 		if (err) {
+ 			goto err_register_irq;
+ 		}
+@@ -835,6 +843,9 @@
+ 		nss_hal_clean_up_irq(&nss_ctx->int_ctx[i]);
+ 	}
+ 
++	free_netdev(nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = NULL;
++
+ err_init:
+ 	if (nss_dev->dev.of_node) {
+ 		if (npd->nmap) {
+@@ -877,6 +888,9 @@
+ 		nss_hal_clean_up_irq(&nss_ctx->int_ctx[i]);
+ 	}
+ 
++	free_netdev(nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = NULL;
++
+ 	/*
+ 	 * nss-drv is exiting, unregister and restore host data plane
+ 	 */
+--- a/nss_init.c
++++ b/nss_init.c
+@@ -135,6 +135,7 @@
+ 	{ .compatible = "qcom,nss" },
+ 	{ .compatible = "qcom,nss0" },
+ 	{ .compatible = "qcom,nss1" },
++	{ }
+ };
+ MODULE_DEVICE_TABLE(of, nss_dt_ids);
+ #endif

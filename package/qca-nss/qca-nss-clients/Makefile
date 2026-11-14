@@ -1,5 +1,10 @@
 include $(TOPDIR)/rules.mk
 
+# Keep the existing 12.5.5 recipe unchanged unless NSS 11.4 is selected.
+ifeq ($(CONFIG_NSS_FIRMWARE_VERSION_11_4),y)
+include $(CURDIR)/Makefile.11.4
+else
+
 PKG_NAME:=qca-nss-clients
 PKG_RELEASE:=13
 
@@ -14,6 +19,7 @@ PKG_VERSION:=$(QSDK_VERSION).$(subst -,.,$(PKG_SOURCE_DATE))~$(PKG_SOURCE_VERSIO
 PKG_BUILD_PARALLEL:=1
 
 PKG_CONFIG_DEPENDS:= \
+	CONFIG_NSS_FIRMWARE_VERSION_11_4 \
 	CONFIG_TARGET_SUBTARGET \
 	CONFIG_NSS_DRV_BRIDGE_ENABLE \
 	CONFIG_NSS_DRV_GRE_ENABLE \
@@ -535,3 +541,5 @@ NSS_CLIENT_PACKAGES:= \
 	qca-nss-drv-wifi-meshmgr
 
 $(foreach package,$(NSS_CLIENT_PACKAGES),$(eval $(call KernelPackage,$(package))))
+
+endif # CONFIG_NSS_FIRMWARE_VERSION_11_4

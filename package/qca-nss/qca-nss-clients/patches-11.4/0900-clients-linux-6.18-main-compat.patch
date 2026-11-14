@@ -1,0 +1,1509 @@
+NSS 11.4 clients: main/Linux 6.18 API compatibility
+
+Apply after the forty unchanged qosmio 11.4 upstream patches.
+Rebase main compat fixes onto the inline/per-qdisc 11.4 architecture.
+Keep the 12.5.5 source and patch arm untouched. Source-only validation;
+compilation, firmware interoperability and device testing are outstanding.
+
+--- a/Makefile
++++ b/Makefile
+@@ -9,6 +9,10 @@
+ 
+ ccflags-y += -DNSS_TUN6RD_DEBUG_LEVEL=0
+ ccflags-y += -Wall -Werror
++subdir-ccflags-y += $(EXTRA_CFLAGS)
++
++# Kernel 6.12 support
++ccflags-y += -Wno-missing-prototypes
+ 
+ # Kernel 6.12 compatibility
+ ccflags-y += -Wno-missing-prototypes -include $(src)/compat.h
+--- a/bridge/nss_bridge_mgr.c
++++ b/bridge/nss_bridge_mgr.c
+@@ -1256,62 +1256,79 @@
+ 
+ /*
+  * nss_bridge_mgr_changeupper_event()
+- *	Bridge manager handles netdevice joining or leaving bridge notification.
++ *	Bridge manager handles upper device notifications not covered by
++ *	completed bridge join/leave events.
+  */
+ static int nss_bridge_mgr_changeupper_event(struct netdev_notifier_info *info)
++{
++	struct net_device *dev = netdev_notifier_info_to_dev(info);
++	struct netdev_notifier_changeupper_info *cu_info;
++
++	cu_info = (struct netdev_notifier_changeupper_info *)info;
++
++	/*
++	 * Check if the master pointer is valid
++	 */
++	if (!cu_info->master)
++		return NOTIFY_DONE;
++
++	/*
++	 * The master is a bond that we don't need to process, but the bond might be part of a bridge.
++	 */
++	if (netif_is_bond_slave(dev))
++		return nss_bridge_mgr_bond_slave_changeupper(cu_info, dev);
++
++	return NOTIFY_DONE;
++}
++
++/*
++ * nss_bridge_mgr_bridge_event()
++ *	Bridge manager handles completed bridge join/leave notifications.
++ */
++static int nss_bridge_mgr_bridge_event(struct netdev_notifier_info *info,
++					unsigned long event)
+ {
+ 	struct net_device *dev = netdev_notifier_info_to_dev(info);
+ 	struct net_device *master_dev;
+-	struct netdev_notifier_changeupper_info *cu_info;
+ 	struct nss_bridge_pvt *b_pvt;
+ 
+-	cu_info = (struct netdev_notifier_changeupper_info *)info;
+-
+-	/*
+-	 * Check if the master pointer is valid
+-	 */
+-	if (!cu_info->master)
+-		return NOTIFY_DONE;
+-
+-	/*
+-	 * The master is a bond that we don't need to process, but the bond might be part of a bridge.
+-	 */
+-	if (netif_is_bond_slave(dev))
+-		return nss_bridge_mgr_bond_slave_changeupper(cu_info, dev);
+-
+-	master_dev = cu_info->upper_dev;
+-
+-	/*
+-	 * Check if upper_dev is a known bridge.
+-	 */
++	master_dev = netdev_master_upper_dev_get(dev);
++	if (!master_dev)
++		return NOTIFY_DONE;
++
+ 	b_pvt = nss_bridge_mgr_find_instance(master_dev);
+ 	if (!b_pvt)
+ 		return NOTIFY_DONE;
+ 
+ 	/*
+-	 * Slave device is bond master and it is added/removed to/from bridge
++	 * Slave device is bond master and it is added/removed to/from bridge.
+ 	 */
+ 	if (netif_is_bond_master(dev)) {
+ #if defined(NSS_BRIDGE_MGR_PPE_SUPPORT)
+-		if (cu_info->linking)
++		if (event == NETDEV_BR_JOIN)
+ 			return nss_bridge_mgr_bond_master_join(dev, b_pvt);
+ 		else
+ 			return nss_bridge_mgr_bond_master_leave(dev, b_pvt);
+ #endif
+-	}
+-
+-	if (cu_info->linking) {
+-		nss_bridge_mgr_trace("%px: Interface %s joining bridge %s\n", b_pvt, dev->name, master_dev->name);
++		return NOTIFY_DONE;
++	}
++
++	if (event == NETDEV_BR_JOIN) {
++		nss_bridge_mgr_trace("%px: Interface %s joining bridge %s\n",
++				b_pvt, dev->name, master_dev->name);
+ 		if (nss_bridge_mgr_join_bridge(dev, b_pvt)) {
+-			nss_bridge_mgr_warn("%px: Interface %s failed to join bridge %s\n", b_pvt, dev->name, master_dev->name);
+-		}
+-
+-		return NOTIFY_DONE;
+-	}
+-
+-	nss_bridge_mgr_trace("%px: Interface %s leaving bridge %s\n", b_pvt, dev->name, master_dev->name);
++			nss_bridge_mgr_warn("%px: Interface %s failed to join bridge %s\n",
++					b_pvt, dev->name, master_dev->name);
++		}
++
++		return NOTIFY_DONE;
++	}
++
++	nss_bridge_mgr_trace("%px: Interface %s leaving bridge %s\n",
++			b_pvt, dev->name, master_dev->name);
+ 	if (nss_bridge_mgr_leave_bridge(dev, b_pvt)) {
+-		nss_bridge_mgr_warn("%px: Interface %s failed to leave bridge %s\n", b_pvt, dev->name, master_dev->name);
++		nss_bridge_mgr_warn("%px: Interface %s failed to leave bridge %s\n",
++				b_pvt, dev->name, master_dev->name);
+ 	}
+ 
+ 	return NOTIFY_DONE;
+@@ -1349,6 +1366,9 @@
+ 	switch (event) {
+ 	case NETDEV_CHANGEUPPER:
+ 		return nss_bridge_mgr_changeupper_event(info);
++	case NETDEV_BR_JOIN:
++	case NETDEV_BR_LEAVE:
++		return nss_bridge_mgr_bridge_event(info, event);
+ 	case NETDEV_CHANGEADDR:
+ 		return nss_bridge_mgr_changeaddr_event(info);
+ 	case NETDEV_CHANGEMTU:
+@@ -1429,7 +1449,7 @@
+ 	struct net_device *br_dev = NULL;
+ 	fal_fdb_entry_t entry;
+ 
+-	if (!event->br)
++	if (!event || !event->br || !event->orig_dev || !event->dev)
+ 		return NOTIFY_DONE;
+ 
+ 	br_dev = br_fdb_bridge_dev_get_and_hold(event->br);
+@@ -1662,6 +1682,7 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS bridge manager");
++MODULE_INFO(description, "NSS bridge manager");
+ 
+ module_param(ovs_enabled, bool, 0644);
+ MODULE_PARM_DESC(ovs_enabled, "OVS bridge is enabled");
+--- a/capwapmgr/nss_capwapmgr.c
++++ b/capwapmgr/nss_capwapmgr.c
+@@ -388,6 +388,7 @@
+  */
+ static void nss_capwapmgr_dummpy_netdev_setup(struct net_device *dev)
+ {
++	static const u8 addr[ETH_ALEN] = { 0 };
+ 	dev->addr_len = ETH_ALEN;
+ 	dev->mtu = ETH_DATA_LEN;
+ 	dev->needed_headroom = NSS_CAPWAP_HEADROOM;
+@@ -402,7 +403,7 @@
+ #else
+ 	dev->priv_destructor = NULL;
+ #endif
+-	memcpy((u8 *)dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
++	eth_hw_addr_set(dev, addr);
+ 	memset(dev->broadcast, 0xff, dev->addr_len);
+ 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
+ }
+--- a/dtls/v1.0/nss_connmgr_dtls_netdev.c
++++ b/dtls/v1.0/nss_connmgr_dtls_netdev.c
+@@ -150,6 +150,7 @@
+  */
+ static void nss_dtlsmgr_dev_setup(struct net_device *dev)
+ {
++	static const u8 addr[ETH_ALEN] = { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
+ 	dev->addr_len = ETH_ALEN;
+ 	dev->mtu = ETH_DATA_LEN;
+ 	dev->hard_header_len = NSS_DTLSMGR_MAX_HDR_LEN;
+@@ -162,7 +163,7 @@
+ 	dev->netdev_ops = &nss_dtlsmgr_session_ops;
+ 	dev->priv_destructor = NULL;
+ 
+-	memcpy(dev->dev_addr, "\xaa\xbb\xcc\xdd\xee\xff", dev->addr_len);
++	eth_hw_addr_set(dev, addr);
+ 	memset(dev->broadcast, 0xff, dev->addr_len);
+ 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
+ }
+--- a/dtls/v2.0/nss_dtlsmgr_ctx.c
++++ b/dtls/v2.0/nss_dtlsmgr_ctx.c
+@@ -19,6 +19,7 @@
+  *	NSS DTLS Manager Context
+  */
+ 
++#include <linux/vmalloc.h>
+ #include <linux/version.h>
+ #include <linux/types.h>
+ #include <linux/ip.h>
+--- a/dtls/v2.0/nss_dtlsmgr_ctx_stats.c
++++ b/dtls/v2.0/nss_dtlsmgr_ctx_stats.c
+@@ -25,6 +25,7 @@
+ #include <linux/module.h>
+ #include <linux/rtnetlink.h>
+ #include <linux/types.h>
++#include <linux/vmalloc.h>
+ #include <linux/version.h>
+ 
+ #include <nss_api_if.h>
+--- a/eogremgr/nss_eogremgr.c
++++ b/eogremgr/nss_eogremgr.c
+@@ -585,3 +585,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS EOGRE manager");
++MODULE_INFO(description, "NSS EOGRE manager");
+--- a/gre/nss_connmgr_gre.c
++++ b/gre/nss_connmgr_gre.c
+@@ -193,7 +193,8 @@
+ 		dev->needed_headroom = sizeof(struct iphdr) + sizeof(struct ethhdr) + MAX_WIFI_HEADROOM + append;
+ 		dev->mtu = ETH_DATA_LEN - sizeof(struct iphdr) - append;
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-		dev->features |= NETIF_F_NETNS_LOCAL | NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA;
++		dev->features |= NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA;
++		dev->netns_immutable = true;
+ #else
+ 		dev->features |= NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA;
+ 		dev->netns_local = true;
+@@ -212,7 +213,7 @@
+ 	}
+ 
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-	dev->features |= NETIF_F_NETNS_LOCAL;
++	dev->netns_immutable = true;
+ #else
+ 	dev->netns_local = true;
+ #endif
+@@ -1723,31 +1724,31 @@
+  *	Map User configured flags to tunnel specific flag.
+  */
+ void nss_connmgr_gre_set_gre_flags(struct nss_connmgr_gre_cfg *cfg,
+-					   uint16_t *o_flags, uint16_t *i_flags)
++					   unsigned long *o_flags, unsigned long *i_flags)
+ 
+ {
+ 	if (cfg->ikey_valid) {
+-		*i_flags |= TUNNEL_KEY;
++		set_bit(IP_TUNNEL_KEY_BIT, i_flags);
+ 	}
+ 
+ 	if (cfg->okey_valid) {
+-		*o_flags |= TUNNEL_KEY;
++		set_bit(IP_TUNNEL_KEY_BIT, o_flags);
+ 	}
+ 
+ 	if (cfg->iseq_valid) {
+-		*i_flags |= TUNNEL_SEQ;
++		set_bit(IP_TUNNEL_SEQ_BIT, i_flags);
+ 	}
+ 
+ 	if (cfg->oseq_valid) {
+-		*o_flags |= TUNNEL_SEQ;
++		set_bit(IP_TUNNEL_SEQ_BIT, o_flags);
+ 	}
+ 
+ 	if (cfg->icsum_valid) {
+-		*i_flags |= TUNNEL_CSUM;
++		set_bit(IP_TUNNEL_CSUM_BIT, i_flags);
+ 	}
+ 
+ 	if (cfg->ocsum_valid) {
+-		*o_flags |= TUNNEL_CSUM;
++		set_bit(IP_TUNNEL_CSUM_BIT, o_flags);
+ 	}
+ }
+ 
+@@ -1755,33 +1756,33 @@
+  * nss_connmgr_gre_get_nss_config_flags()
+  *	Map tunnel specific flags to NSS flags.
+  */
+-uint32_t nss_connmgr_gre_get_nss_config_flags(uint16_t o_flags, uint16_t i_flags,
++uint32_t nss_connmgr_gre_get_nss_config_flags(const unsigned long *o_flags, const unsigned long *i_flags,
+ 						  uint8_t tos, uint8_t ttl,
+ 						  uint16_t frag_off)
+ {
+ 	uint32_t gre_flags = 0;
+ 
+-	if (i_flags & TUNNEL_KEY) {
++	if (test_bit(IP_TUNNEL_KEY_BIT, i_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_IKEY_VALID;
+ 	}
+ 
+-	if (o_flags & TUNNEL_KEY) {
++	if (test_bit(IP_TUNNEL_KEY_BIT, o_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_OKEY_VALID;
+ 	}
+ 
+-	if (i_flags & TUNNEL_SEQ) {
++	if (test_bit(IP_TUNNEL_SEQ_BIT, i_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_ISEQ_VALID;
+ 	}
+ 
+-	if (o_flags & TUNNEL_SEQ) {
++	if (test_bit(IP_TUNNEL_SEQ_BIT, o_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_OSEQ_VALID;
+ 	}
+ 
+-	if (i_flags & TUNNEL_CSUM) {
++	if (test_bit(IP_TUNNEL_CSUM_BIT, i_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_ICSUM_VALID;
+ 	}
+ 
+-	if (o_flags & TUNNEL_CSUM) {
++	if (test_bit(IP_TUNNEL_CSUM_BIT, o_flags)) {
+ 		gre_flags |= NSS_GRE_CONFIG_OCSUM_VALID;
+ 	}
+ 
+@@ -1879,3 +1880,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS gre offload manager");
++MODULE_INFO(description, "NSS gre offload manager");
+--- a/gre/nss_connmgr_gre.h
++++ b/gre/nss_connmgr_gre.h
+@@ -23,6 +23,7 @@
+ #ifndef _NSS_CONNMGR_GRE_H_
+ #define _NSS_CONNMGR_GRE_H_
+ 
++#include <net/ip_tunnels.h>
+ #include "nss_connmgr_gre_public.h"
+ 
+ /*
+@@ -81,9 +82,9 @@
+ 
+ uint32_t nss_connmgr_gre_get_hlen(struct nss_connmgr_gre_cfg *cfg);
+ void nss_connmgr_gre_set_gre_flags(struct nss_connmgr_gre_cfg *cfg,
+-					   uint16_t *o_flags, uint16_t *i_flags);
++					   unsigned long *o_flags, unsigned long *i_flags);
+ 
+-uint32_t nss_connmgr_gre_get_nss_config_flags(uint16_t o_flags, uint16_t i_flags,
++uint32_t nss_connmgr_gre_get_nss_config_flags(const unsigned long *o_flags, const unsigned long *i_flags,
+ 						  uint8_t tos, uint8_t ttl,
+ 						  uint16_t frag_off);
+ int nss_connmgr_gre_set_wifi_next_hop(struct net_device *wifi_vdev);
+--- a/gre/nss_connmgr_gre_v4.c
++++ b/gre/nss_connmgr_gre_v4.c
+@@ -46,7 +46,7 @@
+ 	uint32_t ip_addr __attribute__ ((unused)) = ntohl(dest_ip);
+ 
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-	rt = ip_route_output(&init_net, htonl(dest_ip), 0, 0, 0);
++	rt = ip_route_output(&init_net, htonl(dest_ip), 0, 0, 0, 0);
+ #else
+ 	rt = ip_route_output(&init_net, htonl(dest_ip), 0, 0, 0, 0);
+ #endif
+@@ -92,7 +92,7 @@
+ 	nss_connmgr_gre_info("Src MAC address for %pI4 is %pM\n", &laddr, src_mac);
+ 
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-	rt = ip_route_output(&init_net, raddr, 0, 0, 0);
++	rt = ip_route_output(&init_net, raddr, 0, 0, 0, 0);
+ #else
+ 	rt = ip_route_output(&init_net, raddr, 0, 0, 0, 0);
+ #endif
+@@ -216,7 +216,7 @@
+ 		t->parms.o_key = cfg->okey;
+ 	}
+ 
+-	nss_connmgr_gre_set_gre_flags(cfg, (uint16_t *)&t->parms.o_flags, (uint16_t *)&t->parms.i_flags);
++	nss_connmgr_gre_set_gre_flags(cfg, t->parms.o_flags, t->parms.i_flags);
+ 
+ 	strscpy(t->parms.name, dev->name, IFNAMSIZ);
+ 	t->dev = dev;
+--- a/gre/nss_connmgr_gre_v6.c
++++ b/gre/nss_connmgr_gre_v6.c
+@@ -322,7 +322,7 @@
+ 		t->parms.o_key = cfg->okey;
+ 	}
+ 
+-	nss_connmgr_gre_set_gre_flags(cfg, (uint16_t *)&t->parms.o_flags, (uint16_t *)&t->parms.i_flags);
++	nss_connmgr_gre_set_gre_flags(cfg, t->parms.o_flags, t->parms.i_flags);
+ 
+ 	strscpy(t->parms.name, dev->name, IFNAMSIZ);
+ 	t->dev = dev;
+--- a/gre/test/nss_connmgr_gre_test.c
++++ b/gre/test/nss_connmgr_gre_test.c
+@@ -270,3 +270,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS gre test module");
++MODULE_INFO(description, "NSS gre test module");
+--- a/ipsecmgr/v2.0/nss_ipsecmgr_tunnel.c
++++ b/ipsecmgr/v2.0/nss_ipsecmgr_tunnel.c
+@@ -445,7 +445,7 @@
+ 	/*
+ 	 * Get the MAC address from the ethernet device
+ 	 */
+-	eth_random_addr((u8 *) dev->dev_addr);
++	eth_hw_addr_random(dev);
+ 
+ 	memset(dev->broadcast, 0xff, dev->addr_len);
+ 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
+--- a/ipsecmgr/v2.0/plugins/xfrm/nss_ipsec_xfrm.c
++++ b/ipsecmgr/v2.0/plugins/xfrm/nss_ipsec_xfrm.c
+@@ -30,6 +30,7 @@
+ #include <net/addrconf.h>
+ #include <linux/netfilter.h>
+ #include <linux/debugfs.h>
++#include <linux/vmalloc.h>
+ 
+ #include <nss_api_if.h>
+ #include <nss_ipsec.h>
+--- a/l2tp/l2tpv2/nss_connmgr_l2tpv2.c
++++ b/l2tp/l2tpv2/nss_connmgr_l2tpv2.c
+@@ -418,7 +418,7 @@
+ 				 * set skb_iif
+ 				 */
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-				rt = ip_route_output(&init_net, iph_inner->saddr, 0, 0, 0);
++				rt = ip_route_output(&init_net, iph_inner->saddr, 0, 0, 0, 0);
+ #else
+ 				rt = ip_route_output(&init_net, iph_inner->saddr, 0, 0, 0, 0);
+ #endif
+@@ -992,27 +992,6 @@
+ 	}
+ };
+ 
+-/*
+- * nss_connmgr_l2tpv2_dir
+- */
+-static struct ctl_table nss_connmgr_l2tpv2_dir[] = {
+-	{
+-		.procname		= "l2tpv2",
+-		.mode			= 0555,
+-		.child			= nss_connmgr_l2tpv2_table,
+-	}
+-};
+-
+-/*
+- * nss_connmgr_l2tpv2_sysroot sysctl root dir
+- */
+-static struct ctl_table nss_connmgr_l2tpv2_sysroot[] = {
+-	{
+-		.procname		= "nss",
+-		.mode			= 0555,
+-		.child			= nss_connmgr_l2tpv2_dir,
+-	}
+-};
+ #endif
+ 
+ /*
+@@ -1069,6 +1048,9 @@
+ 	}
+ #endif
+ 	unregister_netdevice_notifier(&nss_connmgr_l2tpv2_notifier);
++#if defined(NSS_L2TP_IPSEC_BIND_BY_NETDEV)
++	unregister_sysctl_table(ctl_tbl_hdr);
++#endif
+ }
+ 
+ module_init(nss_connmgr_l2tpv2_init_module);
+@@ -1076,3 +1058,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS l2tpv2 over ppp offload manager");
++MODULE_INFO(description, "NSS l2tpv2 over ppp offload manager");
+--- a/l2tp/l2tpv2/nss_l2tpv2_stats.c
++++ b/l2tp/l2tpv2/nss_l2tpv2_stats.c
+@@ -130,7 +130,7 @@
+ 		return;
+ 	}
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+-	session = l2tp_tunnel_get_session(tunnel, data.l2tpv2.session.session_id);
++	session = l2tp_v2_session_get(dev_net(dev), data.l2tpv2.tunnel.tunnel_id, data.l2tpv2.session.session_id);
+ #else
+ 	session = l2tp_v2_session_get(dev_net(dev), data.l2tpv2.tunnel.tunnel_id, data.l2tpv2.session.session_id);
+ #endif
+--- a/lag/nss_lag.c
++++ b/lag/nss_lag.c
+@@ -378,3 +378,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS LAG Client");
++MODULE_INFO(description, "NSS LAG Client");
+--- a/map/map-t/nss_connmgr_map_t.c
++++ b/map/map-t/nss_connmgr_map_t.c
+@@ -1101,3 +1101,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS map_t offload manager");
++MODULE_INFO(description, "NSS map_t offload manager");
+--- a/match/nss_match.c
++++ b/match/nss_match.c
+@@ -523,3 +523,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS match client");
++MODULE_INFO(description, "NSS match client");
+--- a/match/nss_match_cmd.c
++++ b/match/nss_match_cmd.c
+@@ -134,7 +134,7 @@
+ 	int ret = proc_dostring(ctl, write, buffer, lenp, ppos);
+ 	char cmd_buf[100] = {0}; /* Use a fixed buffer size matching nss_match_data */
+ 
+-	if (!write) {
++	if (ret || !write) {
+ 		return ret;
+ 	}
+ 
+@@ -422,7 +422,8 @@
+ static int nss_match_cmd_procfs_reset_nexthop(compat_const struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+ {
+ 	struct net_device *dev;
+-	uint32_t if_num, type = 0;
++	int32_t if_num;
++	uint32_t type = 0;
+ 	int ret;
+ 	char *pos;
+ 	char cmd_buf[IFNAMSIZ] = {0};
+@@ -437,7 +438,7 @@
+ 	}
+ 
+ 	ret = proc_dostring(ctl, write, buffer, lenp, ppos);
+-	if (!write) {
++	if (ret || !write) {
+ 		pr_warn("%px: Reset nexthop failed.\n", nss_ctx);
+ 		return ret;
+ 	}
+@@ -504,18 +505,19 @@
+ static int nss_match_cmd_procfs_set_if_nexthop(compat_const struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+ {
+ 	struct net_device *dev;
+-	uint32_t if_num, type = 0;
++	int32_t if_num;
++	uint32_t type = 0;
+ 	uint32_t nh_if_num;
+ 	int table_id;
+ 	struct nss_ctx_instance *nss_ctx = nss_match_get_context();
+ 	struct nss_ctx_instance *wifili_nss_ctx = nss_wifili_get_context();
+-	char *dev_name, *pos;
+-	char *cmd_buf = NULL;
++	char *dev_name, *pos, *args;
++	char cmd_buf[sizeof(nss_match_data)] = {0};
+ 	size_t count = *lenp;
+ 	nss_tx_status_t nss_tx_status;
+ 	int ret = proc_dostring(ctl, write, buffer, lenp, ppos);
+ 
+-	if (!write) {
++	if (ret || !write) {
+ 		return ret;
+ 	}
+ 
+@@ -536,7 +538,14 @@
+ 		*pos = '\0';
+ 	}
+ 
+-	dev_name = strsep(&cmd_buf, " ");
++	args = cmd_buf;
++	dev_name = strsep(&args, " \t");
++	if (!dev_name || !*dev_name || !args ||
++			kstrtou32(strim(args), 10, &nh_if_num)) {
++		pr_warn("%px: Expected interface name and nexthop number.\n", nss_ctx);
++		return -EINVAL;
++	}
++
+ 	dev = dev_get_by_name(&init_net, dev_name);
+ 	if (!dev) {
+ 		pr_warn("%px: Cannot find the net device\n", nss_ctx);
+@@ -546,24 +555,6 @@
+ 	if_num = nss_cmn_get_interface_number_by_dev(dev);
+ 	if (if_num < 0) {
+ 		pr_warn("%px: Invalid interface number:%d\n", nss_ctx, if_num);
+-		dev_put(dev);
+-		return -ENODEV;
+-	}
+-
+-	if (isdigit(cmd_buf[0])) {
+-		if (!sscanf(cmd_buf, "%u", &nh_if_num)) {
+-			pr_warn("%px, Failed to write the nexthop if_num token to integer\n", nss_ctx);
+-			dev_put(dev);
+-			return -EFAULT;
+-		}
+-	} else {
+-		pr_warn("%px: Invalid nexthop interface number.\n", nss_ctx);
+-		dev_put(dev);
+-		return -ENODEV;
+-	}
+-
+-	if (nh_if_num < 0) {
+-		pr_warn("%px: Invalid nexthop interface number:%d\n", nss_ctx, if_num);
+ 		dev_put(dev);
+ 		return -ENODEV;
+ 	}
+--- a/mirror/nss_mirror.c
++++ b/mirror/nss_mirror.c
+@@ -17,6 +17,7 @@
+  */
+ 
+ #include <linux/version.h>
++#include <linux/vmalloc.h>
+ #include <linux/types.h>
+ #include <linux/module.h>
+ #include <linux/netdevice.h>
+--- a/mirror/nss_mirror_ctl.c
++++ b/mirror/nss_mirror_ctl.c
+@@ -18,6 +18,7 @@
+ 
+ #include <linux/sysctl.h>
+ #include <linux/string.h>
++#include <linux/vmalloc.h>
+ 
+ #include "nss_mirror_public.h"
+ #include "nss_mirror.h"
+@@ -770,6 +771,10 @@
+ 		return ret;
+ 	}
+ 
++	if (!count || count >= ctl->maxlen) {
++		return -EINVAL;
++	}
++
+ 	buffer = vzalloc(count + 1);
+ 	if (!buffer) {
+ 		nss_mirror_warn("%px: Dynamic allocation failed for input buffer\n", ctl);
+@@ -778,13 +783,10 @@
+ 
+ 	pfree = buffer;
+ 
+-	if (copy_from_user(buffer, buf, count)) {
+-		vfree(pfree);
+-		return -EFAULT;
+-	}
++	memcpy(buffer, buf, count);
+ 
+ 	nextarg = nss_mirror_ctl_read_nextarg(&buffer);
+-	if (!nextarg) {
++	if (!nextarg || !*nextarg) {
+ 		goto err;
+ 	}
+ 
+--- a/mirror/nss_mirror_init.c
++++ b/mirror/nss_mirror_init.c
+@@ -59,3 +59,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS MIRROR Client");
++MODULE_INFO(description, "NSS MIRROR Client");
+--- a/netlink/Makefile
++++ b/netlink/Makefile
+@@ -5,7 +5,7 @@
+ ccflags-y := -Wall -Werror
+ ccflags-y += -I$(obj)/include
+ ccflags-y += -I$(obj)/../exports
+-ccflags-y += -DNSS_NL_DEBUG_LEVEL=2
++ccflags-y += -DNSS_NL_DEBUG_LEVEL=1
+ ccflags-y += -DNSS_CLIENT_BUILD_ID="$(BUILD_ID)"
+ 
+ ccflags-y += -DCONFIG_NSS_NLIPV4=1
+@@ -17,13 +17,13 @@
+ ccflags-y += -DCONFIG_NSS_NLN2H=1
+ ccflags-y += -DCONFIG_NSS_NLIPV4_REASM=$(strip $(if $(filter $(CONFIG_NSS_NLIPV4_REASM), y), 1 , 0))
+ ccflags-y += -DCONFIG_NSS_NLIPV6_REASM=$(strip $(if $(filter $(CONFIG_NSS_NLIPV6_REASM), y), 1 , 0))
+-ccflags-y += -DCONFIG_NSS_NLWIFILI=1
++ccflags-y += -DCONFIG_NSS_NLWIFILI=$(strip $(if $(filter $(CONFIG_NSS_NLWIFILI), y), 1 , 0))
+ ccflags-y += -DCONFIG_NSS_NLLSO_RX=$(strip $(if $(filter $(CONFIG_NSS_NLLSO_RX), y), 1 , 0))
+-ccflags-y += -DCONFIG_NSS_NLMAP_T=$(strip $(if $(filter $(map-t), y), 1 , 0))
+-ccflags-y += -DCONFIG_NSS_NLPPPOE=$(strip $(if $(filter $(pppoe), y), 1 , 0))
+-ccflags-y += -DCONFIG_NSS_NLL2TPV2=$(strip $(if $(filter $(l2tp), y), 1 , 0))
++ccflags-y += -DCONFIG_NSS_NLMAP_T=$(strip $(if $(filter $(CONFIG_NSS_NLMAP_T), y), 1 , 0))
++ccflags-y += -DCONFIG_NSS_NLPPPOE=$(strip $(if $(filter $(CONFIG_NSS_NLPPPOE), y), 1 , 0))
++ccflags-y += -DCONFIG_NSS_NLL2TPV2=$(strip $(if $(filter $(CONFIG_NSS_NLL2TPV2), y), 1 , 0))
+ ccflags-y += -DCONFIG_NSS_NLQRFS=$(strip $(if $(filter $(CONFIG_NSS_NLQRFS), y), 1 , 0))
+-ccflags-y += -DCONFIG_NSS_NLPPTP=$(strip $(if $(filter $(pptp), y), 1 , 0))
++ccflags-y += -DCONFIG_NSS_NLPPTP=$(strip $(if $(filter $(CONFIG_NSS_NLPPTP), y), 1 , 0))
+ ccflags-y += -DCONFIG_NSS_NLCAPWAP=${CAPWAP_ENABLED}
+ ccflags-y += -DCONFIG_NSS_NLIPSEC=${IPSEC_ENABLED}
+ ccflags-y += -DCONFIG_NSS_NLDTLS=${DTLS_ENABLED}
+@@ -31,7 +31,7 @@
+ 
+ qca-nss-netlink-objs := nss_nl.o
+ 
+-ifneq (,$(filter $(gre), y))
++ifneq (,$(filter $(CONFIG_NSS_NLGRE_REDIR_FAMILY), y))
+ qca-nss-netlink-objs += nss_nlgre_redir_family.o
+ qca-nss-netlink-objs += nss_nlgre_redir_cmd.o
+ qca-nss-netlink-objs += nss_nlgre_redir_cmn.o
+@@ -57,28 +57,30 @@
+ qca-nss-netlink-objs += nss_nlipv6_reasm.o
+ endif
+ 
++ifneq (,$(filter $(CONFIG_NSS_NLWIFILI), y))
+ qca-nss-netlink-objs += nss_nlwifili.o
++endif
+ 
+ ifneq (,$(filter $(CONFIG_NSS_NLLSO_RX), y))
+ qca-nss-netlink-objs += nss_nllso_rx.o
+ endif
+ 
+-ifneq (,$(filter $(map-t), y))
++ifneq (,$(filter $(CONFIG_NSS_NLMAP_T), y))
+ qca-nss-netlink-objs += nss_nlmap_t.o
+ endif
+-ifneq (,$(filter $(pppoe), y))
++ifneq (,$(filter $(CONFIG_NSS_NLPPPOE), y))
+ qca-nss-netlink-objs += nss_nlpppoe.o
+ endif
+ 
+-ifneq (,$(filter $(l2tp), y))
++ifneq (,$(filter $(CONFIG_NSS_NLL2TPV2), y))
+ qca-nss-netlink-objs += nss_nll2tpv2.o
+ endif
+ 
+-ifneq (,$(filter $(pptp), y))
++ifneq (,$(filter $(CONFIG_NSS_NLPPTP), y))
+ qca-nss-netlink-objs += nss_nlpptp.o
+ endif
+ 
+-ifeq ($(SoC),$(filter $(SoC),ipq95xx ipq50xx ipq807x_64))
++ifeq ($(SoC),$(filter $(SoC),ipq95xx ipq50xx ipq50xx_64 ipq807x ipq807x_64))
+ ifneq (,$(filter $(CONFIG_NSS_NLUDP_ST), y))
+ qca-nss-netlink-objs += nss_nludp_st.o
+ endif
+--- a/netlink/include/nss_nlipsec_if.h
++++ b/netlink/include/nss_nlipsec_if.h
+@@ -48,6 +48,7 @@
+ 	NSS_NLIPSEC_CMD_MAX
+ };
+ 
++#if (CONFIG_NSS_NLIPSEC == 1)
+ /**
+  * @brief IPsec SA message
+  */
+@@ -95,4 +96,6 @@
+ 	nss_nlcmn_init_cmd(&rule->cm, sizeof(struct nss_nlipsec_rule), type);
+ }
+ 
++#endif /* CONFIG_NSS_NLIPSEC */
++
+ #endif /* __NSS_NLIPSEC_IF_H */
+--- a/netlink/nss_nl.c
++++ b/netlink/nss_nl.c
+@@ -474,7 +474,7 @@
+ 	 * validate the common message header version & magic
+ 	 */
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
+-	cm = info->userhdr;
++	cm = genl_info_userhdr(info);
+ #else
+ 	cm = genl_info_userhdr(info);
+ #endif
+@@ -584,4 +584,5 @@
+ module_exit(nss_nl_exit);
+ 
+ MODULE_DESCRIPTION("NSS NETLINK");
++MODULE_INFO(description, "NSS NETLINK");
+ MODULE_LICENSE("Dual BSD/GPL");
+--- a/netlink/nss_nl.h
++++ b/netlink/nss_nl.h
+@@ -20,6 +20,8 @@
+  */
+ #ifndef __NSS_NL_H
+ #define __NSS_NL_H
++
++#include <linux/string.h>
+ 
+ #define NSS_NL_DEBUG_LVL_ERROR 1
+ #define NSS_NL_DEBUG_LVL_WARN 2
+@@ -71,7 +73,19 @@
+ /*
+  * debug message for module init and exit
+  */
+-#define nss_nl_info_always(s, ...) printk(KERN_INFO"%s[%d]:" s, __func__, __LINE__, ##__VA_ARGS__)
++static inline bool nss_nl_is_startup_noise(const char *fmt)
++{
++	return strstarts(fmt, "Init NSS netlink ") ||
++		strstarts(fmt, "Exit NSS netlink ") ||
++		strstarts(fmt, "Uninitiallizing the NSS netlink ") ||
++		strstarts(fmt, "All active tunnels destroyed");
++}
++
++#define nss_nl_info_always(s, ...) do {	\
++	if (!nss_nl_is_startup_noise(s)) {	\
++		printk(KERN_INFO "%s[%d]:" s, __func__, __LINE__, ##__VA_ARGS__);	\
++	}	\
++} while (0)
+ 
+ 
+ #define NSS_NETLINK_INIT_FAMILY(family, pre_fn, post_fn) {	\
+--- a/netlink/nss_nlcapwap.c
++++ b/netlink/nss_nlcapwap.c
+@@ -22,6 +22,7 @@
+ #include <linux/netlink.h>
+ #include <linux/types.h>
+ #include <linux/version.h>
++#include <linux/vmalloc.h>
+ #include <linux/workqueue.h>
+ 
+ #include <net/genetlink.h>
+--- a/netlink/nss_nldtls.c
++++ b/netlink/nss_nldtls.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include <crypto/internal/skcipher.h>
++#include <linux/vmalloc.h>
+ #include <linux/debugfs.h>
+ #include <linux/etherdevice.h>
+ #include <linux/icmp.h>
+--- a/netlink/nss_nlgre_redir_cmn.c
++++ b/netlink/nss_nlgre_redir_cmn.c
+@@ -384,7 +384,7 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	memcpy((void *) dev->dev_addr, addr->sa_data, ETH_ALEN);
++	eth_hw_addr_set(dev, addr->sa_data);
+ 	return 0;
+ }
+ 
+--- a/netlink/nss_nlipv4.c
++++ b/netlink/nss_nlipv4.c
+@@ -81,8 +81,8 @@
+  * operation table called by the generic netlink layer based on the command
+  */
+ static struct genl_ops nss_nlipv4_ops[] = {
+-	{.cmd = NSS_IPV4_TX_CREATE_RULE_MSG, .doit = nss_nlipv4_ops_create_rule,},	/* rule create */
+-	{.cmd = NSS_IPV4_TX_DESTROY_RULE_MSG, .doit = nss_nlipv4_ops_destroy_rule,},	/* rule destroy */
++	{.cmd = NSS_IPV4_TX_CREATE_RULE_MSG, .doit = nss_nlipv4_ops_create_rule, .flags = GENL_ADMIN_PERM,},	/* rule create */
++	{.cmd = NSS_IPV4_TX_DESTROY_RULE_MSG, .doit = nss_nlipv4_ops_destroy_rule, .flags = GENL_ADMIN_PERM,},	/* rule destroy */
+ };
+ 
+ /*
+@@ -130,7 +130,7 @@
+ 	 * search for route entry
+ 	 */
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0);
++	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0, 0);
+ #else
+ 	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0, 0);
+ #endif
+--- a/netlink/nss_nlipv6.c
++++ b/netlink/nss_nlipv6.c
+@@ -89,8 +89,8 @@
+  * operation table called by the generic netlink layer based on the command
+  */
+ static struct genl_ops nss_nlipv6_ops[] = {
+-	{.cmd = NSS_IPV6_TX_CREATE_RULE_MSG, .doit = nss_nlipv6_ops_create_rule,},	/* rule create */
+-	{.cmd = NSS_IPV6_TX_DESTROY_RULE_MSG, .doit = nss_nlipv6_ops_destroy_rule,},	/* rule destroy */
++	{.cmd = NSS_IPV6_TX_CREATE_RULE_MSG, .doit = nss_nlipv6_ops_create_rule, .flags = GENL_ADMIN_PERM,},	/* rule create */
++	{.cmd = NSS_IPV6_TX_DESTROY_RULE_MSG, .doit = nss_nlipv6_ops_destroy_rule, .flags = GENL_ADMIN_PERM,},	/* rule destroy */
+ };
+ 
+ /*
+--- a/netlink/nss_nloam.c
++++ b/netlink/nss_nloam.c
+@@ -164,7 +164,7 @@
+ 		goto fail;
+ 	}
+ 
+-	strlcpy((char *)get_resp->bin, nom->msg.fw_ver.string, NSS_OAM_FW_VERSION_LEN);
++	strscpy((char *)get_resp->bin, nom->msg.fw_ver.string, NSS_OAM_FW_VERSION_LEN);
+ 	get_resp->bin[NSS_OAM_FW_VERSION_LEN - 1] = '\0';
+ 	get_resp->error_no = 0;
+ 
+--- a/netlink/nss_nludp_st.c
++++ b/netlink/nss_nludp_st.c
+@@ -445,7 +445,7 @@
+ 	 * search for route entry
+ 	 */
+ #if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 10, 0)
+-	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0);
++	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0, 0);
+ #else
+ 	rt = ip_route_output(&init_net, ip_addr, 0, 0, 0, 0);
+ #endif
+--- a/netlink/nss_nlwifili.c
++++ b/netlink/nss_nlwifili.c
+@@ -28,6 +28,7 @@
+ #include <linux/version.h>
+ #include <linux/vmalloc.h>
+ #include <linux/notifier.h>
++#include <linux/namei.h>
+ 
+ #include <net/genetlink.h>
+ #include <net/sock.h>
+@@ -87,6 +88,26 @@
+ 	.notifier_call = nss_nlwifili_process_notify,
+ };
+ 
++static bool nss_nlwifili_registered;
++
++static bool nss_nlwifili_path_exists(const char *name)
++{
++	struct path path;
++
++	if (kern_path(name, LOOKUP_FOLLOW, &path)) {
++		return false;
++	}
++
++	path_put(&path);
++	return true;
++}
++
++static bool nss_nlwifili_wifi_runtime_available(void)
++{
++	return nss_nlwifili_path_exists("/sys/module/ath11k/parameters/nss_offload")
++		|| nss_nlwifili_path_exists("/sys/kernel/debug/ath11k");
++}
++
+ /*
+  * nss_nlwifili_ops_get_stats()
+  *	get stats handler
+@@ -127,7 +148,17 @@
+ {
+ 	int error,ret;
+ 
++	if (!nss_nlwifili_wifi_runtime_available()) {
++		printk(KERN_INFO "qca-nss-netlink: no Wi-Fi runtime detected; skipping wifili family\n");
++		return true;
++	}
++
+ 	nss_nl_info("Init NSS netlink wifili handler\n");
++
++	if (!nss_wifili_get_context()) {
++		printk(KERN_INFO "qca-nss-netlink: no Wi-Fi NSS context detected; skipping wifili family\n");
++		return true;
++	}
+ 
+ 	/*
+ 	 * register NETLINK ops with the family
+@@ -148,6 +179,7 @@
+ 		return false;
+ 	}
+ 
++	nss_nlwifili_registered = true;
+ 	return true;
+ }
+ 
+@@ -158,6 +190,10 @@
+ bool nss_nlwifili_exit(void)
+ {
+ 	int error;
++
++	if (!nss_nlwifili_registered) {
++		return true;
++	}
+ 
+ 	nss_nl_info("Exit NSS netlink wifili handler\n");
+ 
+@@ -175,5 +211,6 @@
+ 		return false;
+ 	}
+ 
++	nss_nlwifili_registered = false;
+ 	return true;
+ }
+--- a/nss_connmgr_tun6rd.c
++++ b/nss_connmgr_tun6rd.c
+@@ -499,3 +499,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS tun6rd offload manager");
++MODULE_INFO(description, "NSS tun6rd offload manager");
+--- a/nss_qdisc/igs/nss_mirred.c
++++ b/nss_qdisc/igs/nss_mirred.c
+@@ -43,9 +43,24 @@
+ 	struct net_device *dev = rcu_dereference_protected(act->tcfm_dev, 1);
+ 	struct nss_ifb_info *ifb_info = nss_ifb_find_dev(dev);
+ 
++	/*
++	 * Unlink the action from the nss mirred action list FIRST and
++	 * unconditionally. The action is freed by the tc core after this
++	 * callback; returning early (e.g. when the IFB was unregistered
++	 * before the action) used to leave the freed action linked in the
++	 * list and poison it for the next list_add. list_del_init() keeps
++	 * the entry self-consistent if this races a repeated release.
++	 */
++	spin_lock_bh(&nss_mirred_list_lock);
++	if (!list_empty(&act->tcfm_list)) {
++		list_del_init(&act->tcfm_list);
++	}
++	spin_unlock_bh(&nss_mirred_list_lock);
++
+ 	if (!ifb_info) {
+-		nss_igs_error("IFB device %s not found in the linked list \n", dev->name);
+-		return;
++		nss_igs_error("IFB device %s not found in the linked list \n",
++				dev ? dev->name : "(null)");
++		goto put_dev;
+ 	}
+ 
+ 	/*
+@@ -59,12 +74,7 @@
+ 		nss_igs_error("Error in sending IFB CLEAR configure message\n");
+ 	}
+ 
+-	/*
+-	 * Delete the nss mirred action list.
+-	 */
+-	spin_lock_bh(&nss_mirred_list_lock);
+-	list_del(&act->tcfm_list);
+-	spin_unlock_bh(&nss_mirred_list_lock);
++put_dev:
+ 	if (dev) {
+ 		dev_put(dev);
+ 	}
+@@ -245,7 +255,7 @@
+ 	if (!ret) {
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0))
+ 		ret = tcf_idr_create(tn, index, est, tc_act, &nss_mirred_act_ops,
+-				bind, true);
++				bind, true, 0);
+ #else
+ 		ret = tcf_idr_create(tn, index, est, tc_act, &nss_mirred_act_ops,
+ 				bind, true, 0);
+@@ -257,6 +267,14 @@
+ 	}
+ 
+ 	act = nss_mirred_get(*tc_act);
++	if (!ret) {
++		/*
++		 * Freshly created action: make the list entry a valid
++		 * empty node so the (guarded) add and delete below stay
++		 * balanced on every path.
++		 */
++		INIT_LIST_HEAD(&act->tcfm_list);
++	}
+ #endif
+ 	/*
+ 	 * Fill up the nss mirred tc parameters to
+@@ -271,9 +289,12 @@
+ 
+ 	/*
+ 	 * Add the new action instance to the nss mirred action list.
++	 * An existing action (tc replace path) is already linked.
+ 	 */
+ 	spin_lock_bh(&nss_mirred_list_lock);
+-	list_add(&act->tcfm_list, &nss_mirred_list);
++	if (list_empty(&act->tcfm_list)) {
++		list_add(&act->tcfm_list, &nss_mirred_list);
++	}
+ 	spin_unlock_bh(&nss_mirred_list_lock);
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+ 	tcf_hash_insert(tc_act);
+@@ -776,3 +797,4 @@
+ module_exit(nss_mirred_cleanup_module);
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
++MODULE_INFO(description, "NSS mirred action client");
+--- a/nss_qdisc/nss_bf.c
++++ b/nss_qdisc/nss_bf.c
+@@ -303,7 +303,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+ static int nss_bf_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #else
+-static int nss_bf_delete_class(struct Qdisc *sch, unsigned long arg)
++static int nss_bf_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #endif
+ {
+ 	struct nss_bf_sched_data *q = qdisc_priv(sch);
+@@ -392,7 +392,7 @@
+ 	nss_qdisc_info("Grafting old: %px with new: %px\n", *old, new);
+ 	if (*old != &noop_qdisc) {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+-		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(*old);
++		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(((struct Qdisc *)(*old)));
+ #else
+ 		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(((struct Qdisc *)(*old)));
+ #endif
+--- a/nss_qdisc/nss_htb.c
++++ b/nss_qdisc/nss_htb.c
+@@ -529,7 +529,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+ static int nss_htb_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #else
+-static int nss_htb_delete_class(struct Qdisc *sch, unsigned long arg)
++static int nss_htb_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #endif
+ {
+ 	struct nss_htb_sched_data *q = qdisc_priv(sch);
+@@ -653,7 +653,7 @@
+ 	if (*old != &noop_qdisc) {
+ 		nss_qdisc_trace("detaching old: %x\n", (*old)->handle);
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+-		nq_old = qdisc_priv(*old);
++		nq_old = qdisc_priv(((struct Qdisc *)(*old)));
+ #else
+ 		nq_old = qdisc_priv(((struct Qdisc *)(*old)));
+ #endif
+--- a/nss_qdisc/nss_ppe_mc.c
++++ b/nss_qdisc/nss_ppe_mc.c
+@@ -165,3 +165,4 @@
+ 	npq->q.mcast_valid = 0;
+ 	return -EINVAL;
+ }
++
+--- a/nss_qdisc/nss_prio.c
++++ b/nss_qdisc/nss_prio.c
+@@ -351,7 +351,7 @@
+ 	nss_qdisc_info("Grafting old: %px with new: %px\n", *old, new);
+ 	if (*old != &noop_qdisc) {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+-		struct nss_qdisc *nq_old = qdisc_priv(*old);
++		struct nss_qdisc *nq_old = qdisc_priv(((struct Qdisc *)(*old)));
+ #else
+ 		struct nss_qdisc *nq_old = qdisc_priv(((struct Qdisc *)(*old)));
+ #endif
+--- a/nss_qdisc/nss_qdisc.c
++++ b/nss_qdisc/nss_qdisc.c
+@@ -14,6 +14,7 @@
+  **************************************************************************
+  */
+ 
++#include <linux/timer.h>
+ #include "net/gen_stats.h"
+ #include <nss_api_if.h>
+ #include "nss_qdisc.h"
+@@ -2679,7 +2680,7 @@
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
+ 	struct nss_qdisc *nq = (struct nss_qdisc *)data;
+ #else
+-	struct nss_qdisc *nq = from_timer(nq, tm, stats_get_timer);
++	struct nss_qdisc *nq = timer_container_of(nq, tm, stats_get_timer);
+ #endif
+ 
+ 	nss_tx_status_t rc;
+@@ -2750,7 +2751,7 @@
+ 	/*
+ 	 * If the timer was active, then delete timer and return.
+ 	 */
+-	if (del_timer(&nq->stats_get_timer) > 0) {
++	if (timer_delete(&nq->stats_get_timer) > 0) {
+ 		/*
+ 		 * The timer was still active (counting down) when it was deleted.
+ 		 * Therefore we are sure that there are no pending stats request
+@@ -3114,3 +3115,4 @@
+ module_exit(nss_qdisc_module_exit)
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
++MODULE_INFO(description, "NSS qdisc client");
+--- a/nss_qdisc/nss_qdisc.h
++++ b/nss_qdisc/nss_qdisc.h
+@@ -14,6 +14,7 @@
+  **************************************************************************
+  */
+ 
++#include <linux/timer.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/types.h>
+--- a/nss_qdisc/nss_tbl.c
++++ b/nss_qdisc/nss_tbl.c
+@@ -361,7 +361,7 @@
+ 	nss_qdisc_info("Grafting old: %px with new: %px\n", *old, new);
+ 	if (*old != &noop_qdisc) {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+-		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(*old);
++		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(((struct Qdisc *)(*old)));
+ #else
+ 		struct nss_qdisc *nq_old = (struct nss_qdisc *)qdisc_priv(((struct Qdisc *)(*old)));
+ #endif
+--- a/nss_qdisc/nss_wrr.c
++++ b/nss_qdisc/nss_wrr.c
+@@ -413,7 +413,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+ static int nss_wrr_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #else
+-static int nss_wrr_delete_class(struct Qdisc *sch, unsigned long arg)
++static int nss_wrr_delete_class(struct Qdisc *sch, unsigned long arg, struct netlink_ext_ack *extack)
+ #endif
+ {
+ 	struct nss_wrr_sched_data *q = qdisc_priv(sch);
+@@ -499,7 +499,7 @@
+ 	nss_qdisc_info("Grafting old: %px with new: %px\n", *old, new);
+ 	if (*old != &noop_qdisc) {
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+-		struct nss_qdisc *nq_child = qdisc_priv(*old);
++		struct nss_qdisc *nq_child = qdisc_priv(((struct Qdisc *)(*old)));
+ #else
+ 		struct nss_qdisc *nq_child = qdisc_priv(((struct Qdisc *)(*old)));
+ #endif
+--- a/openvpn/src/nss_ovpnmgr_crypto.c
++++ b/openvpn/src/nss_ovpnmgr_crypto.c
+@@ -18,6 +18,7 @@
+  * nss_ovpnmgr_crypto.c
+  */
+ #include <linux/version.h>
++#include <linux/vmalloc.h>
+ #include <linux/types.h>
+ #include <linux/module.h>
+ #include <linux/if.h>
+--- a/portifmgr/nss_portifmgr.c
++++ b/portifmgr/nss_portifmgr.c
+@@ -241,6 +241,7 @@
+ 	struct net_device *ndev, *real_dev;
+ 	struct nss_ctx_instance *nss_ctx;
+ 	struct nss_portifmgr_priv *priv;
++	u8 addr[ETH_ALEN] = { 0x00, 0x03, 0x7f, 0x11, 0x22, 0x00 };
+ 	int err, if_num;
+ 	nss_tx_status_t status;
+ 
+@@ -271,8 +272,8 @@
+ 	/*
+ 	 * Setup temp mac address, this can be changed with ifconfig later
+ 	 */
+-	memcpy(ndev->dev_addr, "\x00\x03\x7f\x11\x22\x00", ETH_ALEN);
+-	ndev->dev_addr[5] = 0x10 + port_id;
++	addr[5] = 0x10 + port_id;
++	eth_hw_addr_set(ndev, addr);
+ 
+ 	err = register_netdev(ndev);
+ 	if (err) {
+--- a/pppoe/nss_connmgr_pppoe.c
++++ b/pppoe/nss_connmgr_pppoe.c
+@@ -439,3 +439,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS pppoe offload manager");
++MODULE_INFO(description, "NSS pppoe offload manager");
+--- a/pptp/nss_connmgr_pptp.c
++++ b/pptp/nss_connmgr_pptp.c
+@@ -889,3 +889,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS pptp offload manager");
++MODULE_INFO(description, "NSS pptp offload manager");
+--- a/profiler/profile.c
++++ b/profiler/profile.c
+@@ -951,11 +951,12 @@
+   .proc_write = debug_if,
+ };
+ #else
+-static const struct file_operations profile_fops = {
+-	.open		= profile_open,
+-	.read		= profile_read,
+-	.release	= profile_release,
+-	.write		= debug_if,
++static const struct proc_ops profile_fops = {
++  .proc_open = profile_open,
++  .proc_read = profile_read,
++  .proc_lseek = seq_lseek,
++  .proc_release = profile_release,
++  .proc_write = debug_if,
+ };
+ #endif
+ 
+@@ -995,12 +996,12 @@
+   .proc_write = profile_rate_write,
+ };
+ #else
+-static const struct file_operations profile_rate_fops = {
+-	.open		= profile_rate_open,
+-	.read		= seq_read,
+-	.llseek		= seq_lseek,
+-	.release	= single_release,
+-	.write		= profile_rate_write,
++static const struct proc_ops profile_rate_fops = {
++  .proc_open = profile_rate_open,
++  .proc_read = seq_read,
++  .proc_lseek = seq_lseek,
++  .proc_release = single_release,
++  .proc_write = profile_rate_write,
+ };
+ #endif
+ 
+--- a/tls/nss_tlsmgr.c
++++ b/tls/nss_tlsmgr.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include <linux/version.h>
++#include <linux/vmalloc.h>
+ #include <linux/types.h>
+ #include <linux/module.h>
+ #include <linux/if_arp.h>
+--- a/tls/nss_tlsmgr_crypto.c
++++ b/tls/nss_tlsmgr_crypto.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include <linux/version.h>
++#include <linux/vmalloc.h>
+ #include <linux/types.h>
+ #include <linux/ip.h>
+ #include <linux/tcp.h>
+--- a/tls/nss_tlsmgr_ctx.c
++++ b/tls/nss_tlsmgr_ctx.c
+@@ -22,6 +22,8 @@
+  */
+ 
+ #include <linux/version.h>
++#include <linux/timer.h>
++#include <linux/vmalloc.h>
+ #include <linux/types.h>
+ #include <linux/ip.h>
+ #include <linux/tcp.h>
+--- a/tls/nss_tlsmgr_tun.c
++++ b/tls/nss_tlsmgr_tun.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include <linux/version.h>
++#include <linux/timer.h>
+ #include <linux/types.h>
+ #include <linux/ip.h>
+ #include <linux/tcp.h>
+@@ -185,7 +186,7 @@
+ 	/*
+ 	 * Get the MAC address from the ethernet device
+ 	 */
+-	eth_random_addr((u8 *) dev->dev_addr);
++	eth_hw_addr_random(dev);
+ 
+ 	memset(dev->broadcast, 0xff, dev->addr_len);
+ 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
+@@ -231,7 +232,7 @@
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
+ 	struct nss_tlsmgr_tun *tun = (struct nss_tlsmgr_tun *)data;
+ #else
+-	struct nss_tlsmgr_tun *tun = from_timer(tun, tm, notify.timer);
++	struct nss_tlsmgr_tun *tun = timer_container_of(tun, tm, notify.timer);
+ #endif
+ 	nss_tlsmgr_notify_callback_t cb;
+ 	struct nss_tlsmgr_stats stats;
+@@ -263,7 +264,7 @@
+ #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
+ 	struct nss_tlsmgr_tun *tun = (struct nss_tlsmgr_tun *)data;
+ #else
+-	struct nss_tlsmgr_tun *tun = from_timer(tun, tm, notify.timer);
++	struct nss_tlsmgr_tun *tun = timer_container_of(tun, tm, decongest.timer);
+ #endif
+ 	nss_tlsmgr_decongest_callback_t cb;
+ 	void *app_data;
+@@ -331,7 +332,7 @@
+ 	write_unlock_bh(&tun->lock);
+ 
+ 	BUG_ON(in_atomic());
+-	del_timer_sync(&tun->notify.timer);
++	timer_delete_sync(&tun->notify.timer);
+ }
+ 
+ /*
+@@ -458,7 +459,7 @@
+ 
+ 	nss_tlsmgr_unregister_notify(dev);
+ 
+-	del_timer_sync(&tun->decongest.timer);
++	timer_delete_sync(&tun->decongest.timer);
+ 	tun->decongest.app_data = NULL;
+ 	tun->decongest.cb = NULL;
+ 	tun->decongest.ticks = 0;
+--- a/tls/nss_tlsmgr_tun.h
++++ b/tls/nss_tlsmgr_tun.h
+@@ -22,6 +22,8 @@
+ 
+ #ifndef __NSS_TLSMGR_TUN_H_
+ #define __NSS_TLSMGR_TUN_H_
++
++#include <linux/timer.h>
+ 
+ #define NSS_TLSMGR_MAX_HDR_SZ \
+ 	(sizeof(struct ipv6hdr) + sizeof(struct tcphdr) + sizeof(struct tlshdr) + AES_BLOCK_SIZE)
+--- a/tunipip6/nss_connmgr_tunipip6.c
++++ b/tunipip6/nss_connmgr_tunipip6.c
+@@ -16,6 +16,7 @@
+  **************************************************************************
+  */
+ 
++#include <linux/vmalloc.h>
+ #include <linux/version.h>
+ #include <linux/types.h>
+ #include <linux/ip.h>
+@@ -1188,3 +1189,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS tunipip6 offload manager");
++MODULE_INFO(description, "NSS tunipip6 offload manager");
+--- a/tunipip6/nss_connmgr_tunipip6_stats.c
++++ b/tunipip6/nss_connmgr_tunipip6_stats.c
+@@ -15,6 +15,8 @@
+  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  **************************************************************************
+  */
++
++#include <linux/vmalloc.h>
+ 
+ #include <nss_api_if.h>
+ #include "nss_connmgr_tunipip6_priv.h"
+--- a/tunipip6/nss_connmgr_tunipip6_sysctl.c
++++ b/tunipip6/nss_connmgr_tunipip6_sysctl.c
+@@ -67,26 +67,18 @@
+ 	char *pfree;
+ 	char *token;
+ 	int ret;
+-	int count;
+-
+-        if (!write) {
+-                return -EINVAL;
+-        }
++	size_t count = *lenp;
++
++	if (!write || !count || count >= MAX_PROC_SIZE) {
++		return -EINVAL;
++	}
+ 
+ 	buf = kzalloc(MAX_PROC_SIZE, GFP_KERNEL);
+ 	if (!buf) {
+ 		return -ENOMEM;
+ 	}
+ 	pfree = buf;
+-	count = *lenp;
+-	if (count > MAX_PROC_SIZE) {
+-		count = MAX_PROC_SIZE;
+-	}
+-
+-	if (copy_from_user(buf, buffer, count)) {
+-		kfree(pfree);
+-		return -EFAULT;
+-	}
++	memcpy(buf, buffer, count);
+ 
+ 	while (buf) {
+ 		char *param, *value;
+--- a/vlan/nss_vlan_mgr.c
++++ b/vlan/nss_vlan_mgr.c
+@@ -1960,3 +1960,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS vlan manager");
++MODULE_INFO(description, "NSS vlan manager");
+--- a/vxlanmgr/nss_vxlanmgr.c
++++ b/vxlanmgr/nss_vxlanmgr.c
+@@ -145,3 +145,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS VxLAN manager");
++MODULE_INFO(description, "NSS VxLAN manager");
+--- a/wifi_meshmgr/nss_wifi_mesh_priv.h
++++ b/wifi_meshmgr/nss_wifi_mesh_priv.h
+@@ -75,6 +75,7 @@
+  */
+ struct nss_wifi_meshmgr_ctx {
+ 	struct nss_ctx_instance *nss_ctx;	/* Nss context for mesh */
++	bool active;				/* Wi-Fi mesh manager runtime state */
+ 	uint32_t mesh_count;			/* Active mesh count */
+ 	spinlock_t ref_lock;			/* Spinlock */
+ 	struct nss_wifi_meshmgr_mesh_ctx *mesh_ctx[NSS_WIFI_MESH_MAX];
+--- a/wifi_meshmgr/nss_wifi_meshmgr.c
++++ b/wifi_meshmgr/nss_wifi_meshmgr.c
+@@ -1795,6 +1795,10 @@
+ 	nss_wifi_meshmgr_status_t nss_status = NSS_WIFI_MESHMGR_SUCCESS;
+ 	struct nss_wifi_meshmgr_mesh_ctx *wmesh_ctx;
+ 
++	if (!wmgr_ctx.active) {
++		return NSS_WIFI_MESH_HANDLE_INVALID;
++	}
++
+ 	spin_lock_bh(&wmgr_ctx.ref_lock);
+ 	if (wmgr_ctx.mesh_count == NSS_WIFI_MESH_MAX) {
+ 		nss_wifi_meshmgr_warn("%px: Reached maxed number of mesh interface\n", dev);
+@@ -1947,6 +1951,10 @@
+ {
+ 	int32_t i;
+ 
++	if (!wmgr_ctx.active) {
++		return;
++	}
++
+ 	/*
+ 	 * Check if there are any mesh I/F. Delete all the mesh I/F from NSS FW and free.
+ 	 */
+@@ -1979,8 +1987,8 @@
+ 
+ 	nss_ctx = nss_wifi_mesh_get_context();
+ 	if (!nss_ctx) {
+-		nss_wifi_meshmgr_warn("NSS SoC context is NULL.\n");
+-		return -1;
++		pr_info("qca-nss-wifi-meshmgr: no Wi-Fi NSS context detected; skipping Wi-Fi mesh manager\n");
++		return 0;
+ 	}
+ 
+ 	wmgr_ctx.nss_ctx = nss_ctx;
+@@ -1988,6 +1996,7 @@
+ 		wmgr_ctx.mesh_ctx[idx] = NULL;
+ 	}
+ 
++	wmgr_ctx.active = true;
+ 	wmgr_ctx.mesh_count = 0;
+ 	spin_lock_init(&wmgr_ctx.ref_lock);
+ 
+@@ -2000,3 +2009,4 @@
+ 
+ MODULE_LICENSE("Dual BSD/GPL");
+ MODULE_DESCRIPTION("NSS WiFi-Mesh manager");
++MODULE_INFO(description, "NSS WiFi-Mesh manager");
