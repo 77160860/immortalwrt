@@ -111,3 +111,104 @@ config NSS_DRV_WIFI_MESH_ENABLE
 	depends on NSS_DRV_WIFIOFFLOAD_ENABLE
 
 endmenu
+
+# Experimental options exist only in the selected 11.4 arm.
+if NSS_FIRMWARE_VERSION_11_4
+menu "NSS11.4 experimental build options"
+	depends on PACKAGE_kmod-qca-nss-drv
+
+choice
+  prompt "Memory Profile"
+  default NSS_MEM_PROFILE_HIGH if TARGET_qualcommax_ipq807x
+  default NSS_MEM_PROFILE_MEDIUM if (TARGET_qualcommax_ipq60xx || TARGET_qualcommax_ipq50xx)
+  help
+    This option allows you to select the memory profile.
+    It should correspond to the total RAM of your board.
+
+  config NSS_MEM_PROFILE_HIGH
+    bool "Use 1G memory profile"
+    depends on TARGET_qualcommax_ipq807x
+    help
+      This allows configuring NSS boards with 1GB+ memory.
+
+  config NSS_MEM_PROFILE_MEDIUM
+    bool "Use 512MB memory profile"
+    help
+      This allows configuring NSS for boards with 512M memory.
+
+  config NSS_MEM_PROFILE_LOW
+    bool "Use 256MB memory profile"
+    help
+      This allows configuring NSS for boards with 256M memory.
+endchoice
+
+config NSS_DRV_CAPWAP_ENABLE
+	bool
+	default n
+	prompt "Enable CAPWAP"
+	depends on TARGET_qualcommax_ipq807x || TARGET_qualcommax_ipq60xx
+
+config NSS_DRV_C2C_ENABLE
+	bool
+	default n
+	prompt "Enable C2C"
+	depends on TARGET_ipq806x || TARGET_qualcommax_ipq807x
+
+config NSS_DRV_CLMAP_ENABLE
+	bool
+	default n
+	prompt "Enable CLMAP"
+
+config NSS_DRV_DTLS_ENABLE
+	bool
+	default n
+	prompt "Enable DTLS"
+	depends on TARGET_qualcommax_ipq807x || TARGET_qualcommax_ipq60xx
+
+config NSS_DRV_IPSEC_ENABLE
+	bool
+	default n
+	prompt "Enable IPSEC"
+
+config NSS_DRV_OAM_ENABLE
+	bool
+	default n
+	prompt "Enable OAM"
+	depends on TARGET_ipq806x
+
+config NSS_DRV_PORTID_ENABLE
+	bool
+	default n
+	prompt "Enable PORTID"
+	depends on TARGET_ipq806x
+
+config NSS_DRV_PVXLAN_ENABLE
+	bool
+	default n
+	prompt "Enable PVXLAN"
+
+config NSS_DRV_QVPN_ENABLE
+	bool
+	default n
+	prompt "Enable OpenVpn (QVPN)"
+	depends on TARGET_qualcommax_ipq807x || TARGET_qualcommax_ipq60xx
+
+config NSS_DRV_TLS_ENABLE
+	bool
+	default n
+	prompt "Enable TLS"
+	depends on TARGET_qualcommax_ipq807x || TARGET_qualcommax_ipq60xx
+
+config NSS_DRV_TSTAMP_ENABLE
+	bool
+	default n
+	prompt "Enable TSTAMP"
+	depends on TARGET_ipq806x
+
+config NSS_DRV_WIFI_LEGACY_ENABLE
+	bool
+	default n
+	depends on TARGET_ipq806x
+	prompt "Enable Legacy WIFI"
+endmenu
+endif

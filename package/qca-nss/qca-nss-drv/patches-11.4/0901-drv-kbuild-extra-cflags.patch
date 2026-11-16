@@ -1,0 +1,24 @@
+Subject: NSS 11.4 Kbuild ccflags bridge for EXTRA_CFLAGS (Linux >= 5.3)
+
+On Linux >= 5.3 the legacy EXTRA_CFLAGS variable is ignored for external
+module builds; only ccflags-y in the module Kbuild Makefile (or KCFLAGS/
+KAFLAGS on the kernel make command line) reaches the compiler. Without
+this, the -I .../qca-nss-dp include path is dropped and the build fails
+with: nss_phys_if.c:25:10: fatal error: nss_dp_api_if.h: No such file.
+
+Mirror the proven 13.1 mechanism (patches/001-compat-build-system-export-
+headers.patch) by bridging NSS_DRV_EXTRA_CFLAGS into ccflags-y.
+
+--- a/Makefile
++++ b/Makefile
+@@ -2,8 +2,10 @@
+ # # Makefile for the NSS driver
+ # ###################################################
+ 
+ obj-m += qca-nss-drv.o
++
++ccflags-y += $(NSS_DRV_EXTRA_CFLAGS)
+ 
+ #
+ # Regular NSS path
+ #

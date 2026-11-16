@@ -1,5 +1,10 @@
 include $(TOPDIR)/rules.mk
 
+# Keep the existing 13.1 recipe unchanged unless NSS 11.4 is selected.
+ifeq ($(CONFIG_NSS_FIRMWARE_VERSION_11_4),y)
+include $(CURDIR)/Makefile.11.4
+else
+
 PKG_NAME:=qca-nss-drv
 PKG_RELEASE:=18
 
@@ -245,3 +250,5 @@ define Build/Compile
 endef
 
 $(eval $(call KernelPackage,qca-nss-drv))
+
+endif # CONFIG_NSS_FIRMWARE_VERSION_11_4

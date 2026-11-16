@@ -115,19 +115,19 @@ Signed-off-by: Julius Bairaktaris <julius@bairaktaris.de>
 +		peer->nss.nss_stats->tx_amsdu += pstats->tx.amsdu_cnt;
 +		peer->nss.nss_stats->tx_non_amsdu += pstats->tx.non_amsdu_cnt;
 +		peer->nss.nss_stats->tx_ofdma += pstats->tx.ofdma;
++#ifndef CONFIG_NSS_FIRMWARE_VERSION_11_4
 +		peer->nss.nss_stats->tx_failed_retries +=
 +			pstats->retry.tx_failed_retry_count;
 +		peer->nss.nss_stats->tx_multiple_retries +=
 +			pstats->retry.tx_multiple_retry_count;
-+#ifdef NSS_FIRMWARE_VERSION_12_5
 +		peer->nss.nss_stats->tx_mpdu_retries +=
 +			pstats->retry.tx_mpdu_retry_count;
 +		peer->nss.nss_stats->tx_mpdu_total_retries +=
 +			pstats->retry.tx_mpdu_total_retry_count;
++		peer->nss.nss_stats->rx_retries += pstats->retry.rx_retry_count;
 +#endif
 +		peer->nss.nss_stats->rx_amsdu += pstats->rx.amsdu_cnt;
 +		peer->nss.nss_stats->rx_non_amsdu += pstats->rx.non_amsdu_cnt;
-+		peer->nss.nss_stats->rx_retries += pstats->retry.rx_retry_count;
 +		peer->nss.nss_stats->rx_intra_bss += pstats->rx.rx_intra_bss_pkts_num;
 +		peer->nss.nss_stats->rx_intra_bss_fail += pstats->rx.rx_intra_bss_fail_num;
 +		peer->nss.nss_stats->rx_mic_err += pstats->rx.err.mic_err;
