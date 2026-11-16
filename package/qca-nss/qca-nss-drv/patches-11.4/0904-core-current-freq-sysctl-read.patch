@@ -1,0 +1,28 @@
+From: OpenWrt Build System <openwrt@localhost>
+Subject: [PATCH] nss-drv 11.4: preserve current frequency sysctl reads
+
+--- a/nss_init.c
++++ b/nss_init.c
+@@ -179,15 +179,15 @@
+ {
+ 	int ret, i;
+ 
+-	BUG_ON(!nss_wq);
+-
+ 	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+ 
+-	if (!*lenp || (*ppos && !write)) {
+-		printk("Frequency Set to %d\n", nss_cmd_buf.current_freq);
+-		*lenp = 0;
+-		return ret;
+-	}
++	if (ret || !write || !*lenp)
++		return ret;
++
++	if (!nss_wq)
++		return ret;
++
++	printk("Frequency Set to %d\n", nss_cmd_buf.current_freq);
+ 
+ 	/* Delayed probe can expose this sysctl before the core is ready. */
+ 	if (nss_top_main.nss[NSS_CORE_0].state != NSS_CORE_STATE_INITIALIZED)

@@ -1,0 +1,1444 @@
+Subject: NSS 11.4 Linux 6.18 / modern GCC compatibility (consolidated)
+
+Source: 53e5863 (11.4.0.5, 2021-09-13). Apply after the 41
+unmodified upstream patches. This one delta replaces the previous
+local 0900 through 0904; do not append those legacy local patches.
+
+Includes the Linux 6.18/NAPI port, private-function linkage and
+exported prototypes, translation-unit self-header visibility,
+and braces around the coredump conditional with disabled logging.
+Logging macros and external message layouts are not changed here.
+Source patch tests do not constitute a kernel/compiler/runtime test.
+
+--- a/compat.h
++++ b/compat.h
+@@ -3,6 +3,10 @@
+ #define _COMPAT_H
+ 
+ #include <linux/version.h>
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
++#error "Experimental NSS11.4 main port targets Linux6.18 only; review compatibility before changing kernels"
++#endif
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+ #include <linux/vmalloc.h>
+--- a/exports/nss_edma.h
++++ b/exports/nss_edma.h
+@@ -366,6 +366,9 @@
+  */
+ extern int nss_edma_stats_unregister_notifier(struct notifier_block *nb);
+ 
++/** nss_edma_get_context() - Get the EDMA NSS core context. */
++extern struct nss_ctx_instance *nss_edma_get_context(void);
++
+ #endif /* __KERNEL__ */
+ 
+ /**
+--- a/exports/nss_freq.h
++++ b/exports/nss_freq.h
+@@ -57,6 +57,9 @@
+  */
+ extern int8_t nss_freq_get_cpu_usage(uint32_t core_id);
+ 
++/** nss_freq_get_context() - Get the NSS frequency context. */
++extern struct nss_ctx_instance *nss_freq_get_context(void);
++
+ /**
+  * @}
+  */
+--- a/exports/nss_gre_tunnel.h
++++ b/exports/nss_gre_tunnel.h
+@@ -425,6 +425,9 @@
+  */
+ extern int nss_gre_tunnel_stats_register_notifier(struct notifier_block *nb);
+ 
++/** nss_gre_tunnel_ifnum_with_core_id() - Append a core ID to an interface. */
++extern int nss_gre_tunnel_ifnum_with_core_id(int if_num);
++
+ /**
+  * @}
+  */
+--- a/exports/nss_if.h
++++ b/exports/nss_if.h
+@@ -464,6 +464,9 @@
+  */
+ nss_tx_status_t nss_if_vsi_assign(struct nss_ctx_instance *nss_ctx, nss_if_num_t if_num, uint32_t vsi);
+ 
++/** nss_if_unregister() - Unregister an NSS interface. */
++extern void nss_if_unregister(uint32_t if_num);
++
+ /**
+  * @}
+  */
+--- a/exports/nss_ipv4.h
++++ b/exports/nss_ipv4.h
+@@ -1049,6 +1049,10 @@
+  */
+ typedef void (*nss_ipv4_msg_callback_t)(void *app_data, struct nss_ipv4_msg *msg);
+ 
++/** Query whether a connection is present in NSS firmware. */
++extern nss_tx_status_t nss_ipv4_conn_inquiry(struct nss_ipv4_5tuple *ipv4_5t_p,
++                                         nss_ipv4_msg_callback_t cb);
++
+ /**
+  * nss_ipv4_tx
+  *	Transmits an IPv4 message to the NSS.
+--- a/exports/nss_ipv4_reasm.h
++++ b/exports/nss_ipv4_reasm.h
+@@ -80,6 +80,9 @@
+  */
+ extern int nss_ipv4_reasm_stats_unregister_notifier(struct notifier_block *nb);
+ 
++/** nss_ipv4_reasm_get_context() - Get the IPv4 reassembly NSS context. */
++extern struct nss_ctx_instance *nss_ipv4_reasm_get_context(void);
++
+ #endif /*__KERNEL__ */
+ 
+ /**
+--- a/exports/nss_ipv6.h
++++ b/exports/nss_ipv6.h
+@@ -1045,6 +1045,10 @@
+  */
+ typedef void (*nss_ipv6_msg_callback_t)(void *app_data, struct nss_ipv6_msg *msg);
+ 
++/** Query whether a connection is present in NSS firmware. */
++extern nss_tx_status_t nss_ipv6_conn_inquiry(struct nss_ipv6_5tuple *ipv6_5t_p,
++                                         nss_ipv6_msg_callback_t cb);
++
+ /**
+  * nss_ipv6_tx
+  *	Transmits an IPv6 message to the NSS.
+--- a/exports/nss_ipv6_reasm.h
++++ b/exports/nss_ipv6_reasm.h
+@@ -83,6 +83,10 @@
+  * 0 on success or -2 on failure.
+  */
+ extern int nss_ipv6_reasm_stats_unregister_notifier(struct notifier_block *nb);
++
++/** nss_ipv6_reasm_get_context() - Get the IPv6 reassembly NSS context. */
++extern struct nss_ctx_instance *nss_ipv6_reasm_get_context(void);
++
+ #endif
+ 
+ /**
+--- a/exports/nss_n2h.h
++++ b/exports/nss_n2h.h
+@@ -563,6 +563,9 @@
+  */
+ extern int nss_n2h_stats_unregister_notifier(struct notifier_block *nb);
+ 
++/** nss_n2h_notify_register() - Register to receive N2H events. */
++extern struct nss_ctx_instance *nss_n2h_notify_register(int core, nss_n2h_msg_callback_t cb, void *app_data);
++
+ #endif /*__KERNEL__ */
+ 
+ /**
+--- a/exports/nss_sjack.h
++++ b/exports/nss_sjack.h
+@@ -149,6 +149,9 @@
+  */
+ extern nss_tx_status_t nss_sjack_tx_msg(struct nss_ctx_instance *nss_ctx, struct nss_sjack_msg *msg);
+ 
++/** nss_sjack_get_context() - Get the SJACK NSS core context. */
++extern struct nss_ctx_instance *nss_sjack_get_context(void);
++
+ /** @} */ /* end_addtogroup nss_sjack_subsystem */
+ 
+ #endif /* __NSS_SJACK_H */
+--- a/exports/nss_vxlan.h
++++ b/exports/nss_vxlan.h
+@@ -342,6 +342,9 @@
+  */
+ extern struct nss_ctx_instance *nss_vxlan_get_ctx(void);
+ 
++/** nss_vxlan_ifnum_with_core_id() - Append a core ID to an interface. */
++extern int nss_vxlan_ifnum_with_core_id(int if_num);
++
+ /**
+  * @}
+  */
+--- a/exports/nss_wifili_if.h
++++ b/exports/nss_wifili_if.h
+@@ -2125,6 +2125,9 @@
+  */
+ extern int nss_wifili_stats_unregister_notifier(struct notifier_block *nb);
+ 
++/** nss_wifili_msg_init() - Initialize a WIFILI message. */
++extern void nss_wifili_msg_init(struct nss_wifili_msg *ncm, uint16_t if_num, uint32_t type, uint32_t len, void *cb, void *app_data);
++
+ #endif /*__KERNEL__ */
+ 
+ /**
+--- a/nss_bridge_log.c
++++ b/nss_bridge_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_bridge_log.h"
+ 
+ /*
+  * nss_bridge_log_message_types_str
+--- a/nss_c2c_rx.c
++++ b/nss_c2c_rx.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include <nss_hal.h>
++#include "nss_tx_rx_common.h"
+ #include "nss_c2c_rx_stats.h"
+ #include "nss_c2c_rx_strings.h"
+ 
+--- a/nss_c2c_rx_strings.c
++++ b/nss_c2c_rx_strings.c
+@@ -17,6 +17,7 @@
+ #include "nss_stats.h"
+ #include "nss_core.h"
+ #include "nss_strings.h"
++#include "nss_c2c_rx_strings.h"
+ 
+ /*
+  * nss_c2c_rx_strings_stats
+--- a/nss_c2c_tx.c
++++ b/nss_c2c_tx.c
+@@ -248,7 +248,7 @@
+  * nss_c2c_tx_msg_performance_test()
+  *	Send NSS c2c peformance test start message.
+  */
+-nss_tx_status_t nss_c2c_tx_msg_performance_test(struct nss_ctx_instance *nss_ctx, uint32_t test_id)
++static nss_tx_status_t nss_c2c_tx_msg_performance_test(struct nss_ctx_instance *nss_ctx, uint32_t test_id)
+ {
+ 	int32_t status;
+ 	struct nss_c2c_tx_msg nctm;
+--- a/nss_c2c_tx_log.c
++++ b/nss_c2c_tx_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_c2c_tx_log.h"
+ 
+ /*
+  * nss_c2c_tx_log_message_types_str
+--- a/nss_c2c_tx_strings.c
++++ b/nss_c2c_tx_strings.c
+@@ -17,6 +17,7 @@
+ #include "nss_stats.h"
+ #include "nss_core.h"
+ #include "nss_strings.h"
++#include "nss_c2c_tx_strings.h"
+ 
+ /*
+  * nss_c2c_tx_strings_stats
+--- a/nss_capwap_log.c
++++ b/nss_capwap_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_capwap_log.h"
+ 
+ /*
+  * nss_capwap_log_message_types_str
+--- a/nss_clmap_log.c
++++ b/nss_clmap_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_clmap_log.h"
+ 
+ /*
+  * nss_clmap_log_message_types_str
+--- a/nss_core.c
++++ b/nss_core.c
+@@ -358,7 +358,7 @@
+  * nss_core_handle_nss_status_pkt()
+  *	Handle the metadata/status packet.
+  */
+-void nss_core_handle_nss_status_pkt(struct nss_ctx_instance *nss_ctx, struct sk_buff *nbuf)
++static void nss_core_handle_nss_status_pkt(struct nss_ctx_instance *nss_ctx, struct sk_buff *nbuf)
+ {
+ 	struct nss_cmn_msg *ncm;
+ 	uint32_t expected_version = NSS_HLOS_MESSAGE_VERSION;
+@@ -2700,7 +2700,7 @@
+  * NOTE: This function does any necessary reference count dropping, and
+  * cleans up the skbuff as if its allocated fresh.
+  */
+-void nss_skb_reuse(struct sk_buff *nbuf)
++static void nss_skb_reuse(struct sk_buff *nbuf)
+ {
+ 	struct skb_shared_info *shinfo;
+ 
+--- a/nss_core.h
++++ b/nss_core.h
+@@ -457,7 +457,7 @@
+ 	struct nss_top_instance *nss_top;
+ 					/* Back pointer to NSS Top */
+ 	struct device *dev;		/* Pointer to the original device from probe */
+-	struct net_device napi_ndev;    /* Dummy_netdev for NAPI */
++	struct net_device *napi_ndev;   /* Allocated dummy netdev for Linux6.18 NAPI */
+ 	uint32_t id;			/* Core ID for this instance */
+ 	void __iomem *nmap;		/* Pointer to NSS CSM registers */
+ 	void __iomem *vmap;		/* Virt mem pointer to virtual register map */
+@@ -504,6 +504,8 @@
+ 	uint32_t magic;
+ 					/* Magic protection */
+ };
++
++#define NSS_CTX_NAPI_NDEV(ctx) ((ctx)->napi_ndev)
+ 
+ /*
+  * NSS stats read context
+--- a/nss_coredump.c
++++ b/nss_coredump.c
+@@ -114,8 +114,9 @@
+ 		}
+ 	} while (timed++ < nss_top_main.num_nss * 2);
+ 
+-	if (timed >= nss_top_main.num_nss * 2)
++	if (timed >= nss_top_main.num_nss * 2) {
+ 		nss_warning("might get %d FW dumped", dumped);
++	}
+ 
+ 	return	NOTIFY_DONE;
+ }
+--- a/nss_crypto_cmn_log.c
++++ b/nss_crypto_cmn_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_crypto_cmn_log.h"
+ 
+ /*
+  * nss_crypto_cmn_log_message_types_str
+--- a/nss_crypto_log.c
++++ b/nss_crypto_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_crypto_log.h"
+ 
+ /*
+  * nss_crypto_log_message_types_str
+--- a/nss_dma_log.c
++++ b/nss_dma_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_dma_log.h"
+ 
+ /*
+  * nss_dma_log_message_types_str
+--- a/nss_dma_strings.c
++++ b/nss_dma_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include "nss_strings.h"
+ #include "nss_dma_stats.h"
++#include "nss_dma_strings.h"
+ 
+ /*
+  * nss_dma_strings_stats
+--- a/nss_drv_strings.c
++++ b/nss_drv_strings.c
+@@ -19,6 +19,7 @@
+ #include "nss_stats.h"
+ #include "nss_core.h"
+ #include "nss_strings.h"
++#include "nss_drv_strings.h"
+ 
+ /*
+  * nss_drv_strings_stats
+--- a/nss_dtls_cmn_log.c
++++ b/nss_dtls_cmn_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_dtls_cmn_log.h"
+ 
+ /*
+  * nss_dtls_cmn_log_message_types_str
+--- a/nss_dtls_cmn_stats.c
++++ b/nss_dtls_cmn_stats.c
+@@ -29,7 +29,6 @@
+  */
+ DEFINE_SPINLOCK(nss_dtls_cmn_stats_lock);
+ 
+-unsigned long *nss_dtls_cmn_ifmap_get(void);
+ 
+ /*
+  * nss_dtls_cmn_ctx_stats
+--- a/nss_dtls_cmn_stats.h
++++ b/nss_dtls_cmn_stats.h
+@@ -23,4 +23,6 @@
+ extern void nss_dtls_cmn_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_cmn_msg *ncm);
+ extern void nss_dtls_cmn_stats_dentry_create(void);
+ 
++extern unsigned long *nss_dtls_cmn_ifmap_get(void);
++
+ #endif /* __NSS_DTLS_CMN_STATS_H */
+--- a/nss_dtls_log.c
++++ b/nss_dtls_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_dtls_log.h"
+ 
+ /*
+  * nss_dtls_log_message_types_str
+--- a/nss_dynamic_interface_log.c
++++ b/nss_dynamic_interface_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_dynamic_interface_log.h"
+ 
+ /*
+  * nss_dynamic_interface_log_message_types_str
+--- a/nss_dynamic_interface_stats.c
++++ b/nss_dynamic_interface_stats.c
+@@ -18,6 +18,7 @@
+ 
+ #include "nss_tx_rx_common.h"
+ #include "nss_dynamic_interface.h"
++#include "nss_dynamic_interface_stats.h"
+ 
+ /*
+  * nss_dynamic_interface_type_names
+--- a/nss_edma.c
++++ b/nss_edma.c
+@@ -18,6 +18,7 @@
+  * nss_edma.c
+  *	NSS EDMA APIs
+  */
++#include "nss_tx_rx_common.h"
+ #include "nss_edma_stats.h"
+ #include "nss_edma_strings.h"
+ 
+--- a/nss_edma_strings.c
++++ b/nss_edma_strings.c
+@@ -18,6 +18,7 @@
+ #include "nss_core.h"
+ #include <nss_edma.h>
+ #include "nss_strings.h"
++#include "nss_edma_strings.h"
+ 
+ /*
+  * nss_edma_strings_stats_node
+--- a/nss_eth_rx.c
++++ b/nss_eth_rx.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include <nss_core.h>
++#include "nss_tx_rx_common.h"
+ #include "nss_eth_rx_stats.h"
+ #include "nss_eth_rx_strings.h"
+ 
+--- a/nss_eth_rx_strings.c
++++ b/nss_eth_rx_strings.c
+@@ -19,6 +19,7 @@
+ #include "nss_stats.h"
+ #include "nss_core.h"
+ #include "nss_strings.h"
++#include "nss_eth_rx_strings.h"
+ 
+ /*
+  * nss_eth_rx_strings_stats
+--- a/nss_freq.c
++++ b/nss_freq.c
+@@ -202,7 +202,7 @@
+  * nss_freq_scale_frequency()
+  * 	Frequency scaling algorithm to scale frequency.
+  */
+-void nss_freq_scale_frequency(struct nss_ctx_instance *nss_ctx, uint32_t inst_cnt)
++static void nss_freq_scale_frequency(struct nss_ctx_instance *nss_ctx, uint32_t inst_cnt)
+ {
+ 	uint32_t b_index;
+ 	uint32_t minimum;
+--- a/nss_freq_log.c
++++ b/nss_freq_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_freq_log.h"
+ 
+ /*
+  * nss_freq_log_message_types_str
+--- a/nss_freq_stats.c
++++ b/nss_freq_stats.c
+@@ -21,6 +21,7 @@
+ 
+ #include "nss_stats.h"
+ #include "nss_tx_rx_common.h"
++#include "nss_freq_stats.h"
+ 
+ /*
+  * At any point, this object has the latest data about CPU utilization.
+--- a/nss_gre_log.c
++++ b/nss_gre_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_log.h"
+ 
+ #define NSS_GRE_LOG_MESSAGE_TYPE_INDEX(type) ((type) - NSS_IF_MAX_MSG_TYPES - 1)
+ 
+--- a/nss_gre_redir_lag_ds_log.c
++++ b/nss_gre_redir_lag_ds_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_redir_lag_ds_log.h"
+ 
+ /*
+  * nss_gre_redir_lag_ds_log_message_types_str
+--- a/nss_gre_redir_lag_us_log.c
++++ b/nss_gre_redir_lag_us_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_redir_lag_us_log.h"
+ 
+ /*
+  * nss_gre_redir_lag_us_log_message_types_str
+--- a/nss_gre_redir_log.c
++++ b/nss_gre_redir_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_redir_log.h"
+ 
+ /*
+  * nss_gre_redir_log_message_types_str
+--- a/nss_gre_redir_mark_log.c
++++ b/nss_gre_redir_mark_log.c
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_redir_mark_log.h"
+ 
+ /*
+  * nss_gre_redir_mark_log_message_types_str
+--- a/nss_gre_tunnel_log.c
++++ b/nss_gre_tunnel_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_gre_tunnel_log.h"
+ 
+ /*
+  * nss_gre_tunnel_log_message_types_str
+--- a/nss_hal/fsm9010/nss_hal_pvt.c
++++ b/nss_hal/fsm9010/nss_hal_pvt.c
+@@ -291,14 +291,14 @@
+ 	}
+ 
+ 	int_ctx->irq = npd->irq[irq_num];
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, nss_core_handle_napi, 64);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, nss_core_handle_napi, 64);
+ 	return 0;
+ }
+ 
+ /*
+  * __nss_hal_init_imem
+  */
+-void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
++static void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
+ {
+ 	struct nss_meminfo_ctx *mem_ctx = &nss_ctx->meminfo_ctx;
+ 
+@@ -313,7 +313,7 @@
+ /*
+  * __nss_hal_init_utcm_shared
+  */
+-bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
++static bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
+ {
+ 	/*
+ 	 * Nothing to be done as there are no UTCM_SHARED defined for fsm9010
+--- a/nss_hal/ipq50xx/nss_hal_pvt.c
++++ b/nss_hal/ipq50xx/nss_hal_pvt.c
+@@ -598,11 +598,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 	int_ctx->irq = irq;
+@@ -612,7 +613,7 @@
+ /*
+  * __nss_hal_init_imem
+  */
+-void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
++static void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
+ {
+ 	/*
+ 	 * Nothing to be done as there are no TCM in ipq50xx
+@@ -622,7 +623,7 @@
+ /*
+  * __nss_hal_init_utcm_shared
+  */
+-bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
++static bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
+ {
+ 	struct nss_meminfo_ctx *mem_ctx = &nss_ctx->meminfo_ctx;
+ 	uint32_t utcm_shared_map_magic = meminfo_start[2];
+--- a/nss_hal/ipq60xx/nss_hal_pvt.c
++++ b/nss_hal/ipq60xx/nss_hal_pvt.c
+@@ -706,11 +706,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 
+@@ -721,7 +722,7 @@
+ /*
+  * __nss_hal_init_imem
+  */
+-void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
++static void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
+ {
+ 	/*
+ 	 * Nothing to be done as there are no TCM in ipq60xx
+@@ -731,7 +732,7 @@
+ /*
+  * __nss_hal_init_utcm_shared
+  */
+-bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
++static bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
+ {
+ 	struct nss_meminfo_ctx *mem_ctx = &nss_ctx->meminfo_ctx;
+ 	uint32_t utcm_shared_map_magic = meminfo_start[2];
+--- a/nss_hal/ipq806x/nss_hal_pvt.c
++++ b/nss_hal/ipq806x/nss_hal_pvt.c
+@@ -190,7 +190,7 @@
+  * nss_hal_scale_fabric()
+  *	DT supported fabric scaling
+  */
+-void nss_hal_scale_fabric(uint32_t work_frequency)
++static void nss_hal_scale_fabric(uint32_t work_frequency)
+ {
+ #if (NSS_DT_SUPPORT == 1)
+ 	nss_crypto_pm_event_callback_t crypto_pm_cb;
+@@ -232,7 +232,7 @@
+  * nss_hal_pm_support()
+  *	Supported in 3.4
+  */
+-void nss_hal_pm_support(uint32_t work_frequency)
++static void nss_hal_pm_support(uint32_t work_frequency)
+ {
+ #if (NSS_PM_SUPPORT == 1)
+ 	if (!pm_client) {
+@@ -253,7 +253,7 @@
+  * nss_hal_freq_change()
+  *	Send frequency change message, and clock adjustment
+  */
+-void nss_hal_freq_change(nss_work_t *my_work)
++static void nss_hal_freq_change(nss_work_t *my_work)
+ {
+ 	nss_freq_change(&nss_top_main.nss[NSS_CORE_0], my_work->frequency, my_work->stats_enable, 0);
+ 	if (nss_top_main.nss[NSS_CORE_1].state == NSS_CORE_STATE_INITIALIZED) {
+@@ -1185,7 +1185,7 @@
+ 	}
+ 
+ 	int_ctx->irq = npd->irq[irq_num];
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, nss_core_handle_napi, 64);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, nss_core_handle_napi, 64);
+ 
+ 	return 0;
+ }
+@@ -1193,7 +1193,7 @@
+ /*
+  * __nss_hal_init_imem
+  */
+-void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
++static void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
+ {
+ 	struct nss_meminfo_ctx *mem_ctx = &nss_ctx->meminfo_ctx;
+ 
+@@ -1208,7 +1208,7 @@
+ /*
+  * __nss_hal_init_utcm_shared
+  */
+-bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
++static bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
+ {
+ 	/*
+ 	 * Nothing to be done as there are no UTCM_SHARED defined for ipq806x
+--- a/nss_hal/ipq807x/nss_hal_pvt.c
++++ b/nss_hal/ipq807x/nss_hal_pvt.c
+@@ -748,11 +748,12 @@
+ 		return err;
+ 	}
+ 
+-	netif_napi_add_weight(&nss_ctx->napi_ndev, &int_ctx->napi, napi_poll_cb, napi_wgt);
++	netif_napi_add_weight(NSS_CTX_NAPI_NDEV(nss_ctx), &int_ctx->napi, napi_poll_cb, napi_wgt);
+ 	int_ctx->cause = cause;
+ 	err = request_irq(irq, nss_hal_handle_irq, 0, irq_name, int_ctx);
+ 	if (err) {
+ 		nss_warning("%px: nss%d: request_irq failed for irq# %d\n", nss_ctx, nss_ctx->id, irq_num);
++		netif_napi_del(&int_ctx->napi);
+ 		return err;
+ 	}
+ 	int_ctx->irq = irq;
+@@ -762,7 +763,7 @@
+ /*
+  * __nss_hal_init_imem
+  */
+-void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
++static void __nss_hal_init_imem(struct nss_ctx_instance *nss_ctx)
+ {
+ 	struct nss_meminfo_ctx *mem_ctx = &nss_ctx->meminfo_ctx;
+ 
+@@ -777,7 +778,7 @@
+ /*
+  * __nss_hal_init_utcm_shared
+  */
+-bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
++static bool __nss_hal_init_utcm_shared(struct nss_ctx_instance *nss_ctx, uint32_t *meminfo_start)
+ {
+ 	/*
+ 	 * Nothing to be done as there are no TCM in ipq807x
+--- a/nss_hal/nss_hal.c
++++ b/nss_hal/nss_hal.c
+@@ -25,6 +25,7 @@
+ #include <linux/of.h>
+ #include <linux/irq.h>
+ #include <linux/ethtool.h>
++#include <linux/netdevice.h>
+ 
+ #include "nss_hal.h"
+ #include "nss_arch.h"
+@@ -57,6 +58,9 @@
+ 				      const unsigned char *sequence,
+ 				      size_t sequence_size)
+ {
++	if (sequence_size > buffer_size)
++		return NULL;
++
+ 	for (size_t i = 0; i <= buffer_size - sequence_size; i++) {
+ 		if (memcmp(buffer + i, sequence, sequence_size) == 0) {
+ 			return (unsigned char *)(buffer + i);
+@@ -356,10 +360,14 @@
+ 	/*
+ 	 * Initialize the dummy netdevice.
+ 	 */
+-	init_dummy_netdev(&nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = alloc_netdev_dummy(0);
++	if (!nss_ctx->napi_ndev) {
++		err = -ENOMEM;
++		goto err_init;
++	}
+ 
+ 	for (i = 0; i < npd->num_irq; i++) {
+-		err = nss_hal_register_irq(nss_ctx, npd, &nss_ctx->napi_ndev, i);
++		err = nss_hal_register_irq(nss_ctx, npd, NSS_CTX_NAPI_NDEV(nss_ctx), i);
+ 		if (err) {
+ 			goto err_register_irq;
+ 		}
+@@ -835,6 +843,9 @@
+ 		nss_hal_clean_up_irq(&nss_ctx->int_ctx[i]);
+ 	}
+ 
++	free_netdev(nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = NULL;
++
+ err_init:
+ 	if (nss_dev->dev.of_node) {
+ 		if (npd->nmap) {
+@@ -877,6 +888,9 @@
+ 		nss_hal_clean_up_irq(&nss_ctx->int_ctx[i]);
+ 	}
+ 
++	free_netdev(nss_ctx->napi_ndev);
++	nss_ctx->napi_ndev = NULL;
++
+ 	/*
+ 	 * nss-drv is exiting, unregister and restore host data plane
+ 	 */
+--- a/nss_if_log.c
++++ b/nss_if_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_if_log.h"
+ 
+ /*
+  * nss_if_log_message_types_str
+--- a/nss_init.c
++++ b/nss_init.c
+@@ -135,6 +135,7 @@
+ 	{ .compatible = "qcom,nss" },
+ 	{ .compatible = "qcom,nss0" },
+ 	{ .compatible = "qcom,nss1" },
++	{ }
+ };
+ MODULE_DEVICE_TABLE(of, nss_dt_ids);
+ #endif
+--- a/nss_ipsec_cmn_log.c
++++ b/nss_ipsec_cmn_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_ipsec_cmn_log.h"
+ 
+ #define NSS_IPSEC_LOG_IPV4 4
+ #define NSS_IPSEC_LOG_IPV6 6
+--- a/nss_ipsec_cmn_stats.c
++++ b/nss_ipsec_cmn_stats.c
+@@ -31,7 +31,6 @@
+  */
+ DEFINE_SPINLOCK(nss_ipsec_cmn_stats_lock);
+ 
+-unsigned long *nss_ipsec_cmn_ifmap_get(void);
+ const char *nss_ipsec_cmn_stats_iface_type(enum nss_dynamic_interface_type type);
+ 
+ /*
+--- a/nss_ipsec_cmn_stats.h
++++ b/nss_ipsec_cmn_stats.h
+@@ -25,4 +25,6 @@
+ extern void nss_ipsec_cmn_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_cmn_msg *ncm);
+ extern void nss_ipsec_cmn_stats_dentry_create(void);
+ 
++extern unsigned long *nss_ipsec_cmn_ifmap_get(void);
++
+ #endif /* __NSS_IPSEC_CMN_STATS_H */
+--- a/nss_ipsec_log.c
++++ b/nss_ipsec_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_ipsec_log.h"
+ 
+ #define NSS_IPSEC_LOG_IPV4 4
+ #define NSS_IPSEC_LOG_IPV6 6
+--- a/nss_ipv4_reasm.c
++++ b/nss_ipv4_reasm.c
+@@ -19,6 +19,7 @@
+  *	NSS IPv4 Reassembly APIs
+  */
+ #include <nss_core.h>
++#include "nss_tx_rx_common.h"
+ #include "nss_ipv4_reasm_stats.h"
+ #include "nss_ipv4_reasm_strings.h"
+ 
+--- a/nss_ipv4_reasm_strings.c
++++ b/nss_ipv4_reasm_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_ipv4_reasm.h>
+ #include "nss_strings.h"
++#include "nss_ipv4_reasm_strings.h"
+ 
+ /*
+  * nss_ipv4_reasm_strings_stats
+--- a/nss_ipv4_strings.c
++++ b/nss_ipv4_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_ipv4.h>
+ #include "nss_strings.h"
++#include "nss_ipv4_strings.h"
+ 
+ /*
+  * nss_ipv4_strings_exception_stats
+--- a/nss_ipv6_reasm.c
++++ b/nss_ipv6_reasm.c
+@@ -19,6 +19,7 @@
+  *	NSS IPv6 Reassembly APIs
+  */
+ #include <nss_core.h>
++#include "nss_tx_rx_common.h"
+ #include "nss_ipv6_reasm_stats.h"
+ #include "nss_ipv6_reasm_strings.h"
+ 
+--- a/nss_ipv6_reasm_strings.c
++++ b/nss_ipv6_reasm_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_ipv6_reasm.h>
+ #include "nss_strings.h"
++#include "nss_ipv6_reasm_strings.h"
+ 
+ /*
+  * nss_ipv6_reasm_strings_stats
+--- a/nss_ipv6_strings.c
++++ b/nss_ipv6_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_ipv6.h>
+ #include "nss_strings.h"
++#include "nss_ipv6_strings.h"
+ 
+ /*
+  * nss_ipv6_strings_exception_stats
+--- a/nss_l2tpv2.c
++++ b/nss_l2tpv2.c
+@@ -31,7 +31,7 @@
+  * nss_l2tpv2_session_debug_stats_sync
+  *	Per session debug stats for l2tpv2
+  */
+-void nss_l2tpv2_session_debug_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_l2tpv2_sync_session_stats_msg *stats_msg, uint16_t if_num)
++static void nss_l2tpv2_session_debug_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_l2tpv2_sync_session_stats_msg *stats_msg, uint16_t if_num)
+ {
+ 	int i;
+ 	spin_lock_bh(&nss_l2tpv2_session_debug_stats_lock);
+--- a/nss_l2tpv2_log.c
++++ b/nss_l2tpv2_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_l2tpv2_log.h"
+ 
+ /*
+  * nss_l2tpv2_log_message_types_str
+--- a/nss_l2tpv2_strings.c
++++ b/nss_l2tpv2_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_l2tpv2.h>
+ #include "nss_strings.h"
++#include "nss_l2tpv2_strings.h"
+ 
+ /*
+  * nss_l2tpv2_strings_session_stats
+--- a/nss_lag.c
++++ b/nss_lag.c
+@@ -38,7 +38,7 @@
+  * nss_lag_state_callback()
+  *	Call back function for nss LAG State
+  */
+-void nss_lag_state_callback(void *arg, struct nss_lag_msg *nm)
++static void nss_lag_state_callback(void *arg, struct nss_lag_msg *nm)
+ {
+ 	struct nss_lag_pvt *lag_msg_state = arg;
+ 
+@@ -142,7 +142,7 @@
+ /**
+  * nss_lag_handler()
+  */
+-void nss_lag_handler(struct nss_ctx_instance *nss_ctx,
++static void nss_lag_handler(struct nss_ctx_instance *nss_ctx,
+ 		     struct nss_cmn_msg *ncm,
+ 		     void *app_data)
+ {
+--- a/nss_lag_log.c
++++ b/nss_lag_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_lag_log.h"
+ 
+ /*
+  * nss_lag_log_message_types_str
+--- a/nss_log.c
++++ b/nss_log.c
+@@ -299,7 +299,7 @@
+  * nss_debug_interface_set_callback()
+  *	Sets the callback
+  */
+-void nss_debug_interface_set_callback(nss_log_msg_callback_t cb, void *app_data)
++static void nss_debug_interface_set_callback(nss_log_msg_callback_t cb, void *app_data)
+ {
+ 	nss_debug_interface_cb = cb;
+ 	nss_debug_interface_app_data = app_data;
+--- a/nss_lso_rx.c
++++ b/nss_lso_rx.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include <nss_core.h>
++#include "nss_tx_rx_common.h"
+ #include "nss_lso_rx_stats.h"
+ #include "nss_lso_rx_strings.h"
+ 
+--- a/nss_map_t.c
++++ b/nss_map_t.c
+@@ -65,7 +65,7 @@
+  * nss_map_t_instance_debug_stats_sync
+  *	debug stats for map_t
+  */
+-void nss_map_t_instance_debug_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_map_t_sync_stats_msg *stats_msg, uint16_t if_num)
++static void nss_map_t_instance_debug_stats_sync(struct nss_ctx_instance *nss_ctx, struct nss_map_t_sync_stats_msg *stats_msg, uint16_t if_num)
+ {
+ 	int i;
+ 	enum nss_dynamic_interface_type if_type;
+--- a/nss_map_t_log.c
++++ b/nss_map_t_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_map_t_log.h"
+ 
+ /*
+  * nss_map_t_log_message_types_str
+--- a/nss_map_t_strings.c
++++ b/nss_map_t_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_map_t.h>
+ #include "nss_strings.h"
++#include "nss_map_t_strings.h"
+ 
+ /*
+  * nss_map_t_strings_instance_stats
+--- a/nss_match_log.c
++++ b/nss_match_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_match_log.h"
+ 
+ /*
+  * nss_match_log_message_types_str
+--- a/nss_mirror_log.c
++++ b/nss_mirror_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_mirror_log.h"
+ 
+ /*
+  * nss_mirror_log_message_types_str
+--- a/nss_n2h_strings.c
++++ b/nss_n2h_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_n2h.h>
+ #include "nss_strings.h"
++#include "nss_n2h_strings.h"
+ 
+ /*
+  * nss_n2h_strings_stats
+--- a/nss_oam_log.c
++++ b/nss_oam_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_oam_log.h"
+ 
+ /*
+  * nss_oam_log_message_types_str
+--- a/nss_phys_if.h
++++ b/nss_phys_if.h
+@@ -330,4 +330,7 @@
+  */
+ nss_tx_status_t nss_phys_if_pause_on_off(struct nss_ctx_instance *nss_ctx, uint32_t pause_on, uint32_t if_num);
+ 
++/** nss_phys_if_unregister() - Unregister a physical interface. */
++extern void nss_phys_if_unregister(uint32_t if_num);
++
+ #endif /* __NSS_PHYS_IF_H */
+--- a/nss_portid.c
++++ b/nss_portid.c
+@@ -111,7 +111,7 @@
+  * nss_portid_get_ctx()
+  *	Return a portid's NSS context.
+  */
+-struct nss_ctx_instance *nss_portid_get_ctx(void)
++static struct nss_ctx_instance *nss_portid_get_ctx(void)
+ {
+ 	struct nss_ctx_instance *nss_ctx;
+ 
+--- a/nss_portid_log.c
++++ b/nss_portid_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_portid_log.h"
+ 
+ /*
+  * nss_portid_log_message_types_str
+--- a/nss_ppe_vp.c
++++ b/nss_ppe_vp.c
+@@ -277,7 +277,7 @@
+  * nss_ppe_vp_tx_msg()
+  *	Transmit a ppe_vp message to NSS FW
+  */
+-nss_tx_status_t nss_ppe_vp_tx_msg(struct nss_ctx_instance *nss_ctx, struct nss_ppe_vp_msg *msg)
++static nss_tx_status_t nss_ppe_vp_tx_msg(struct nss_ctx_instance *nss_ctx, struct nss_ppe_vp_msg *msg)
+ {
+ 	struct nss_cmn_msg *ncm = &msg->cm;
+ 	nss_if_num_t if_num = ncm->interface;
+@@ -307,7 +307,7 @@
+  * nss_ppe_vp_tx_msg_sync()
+  *	Transmit a ppe_vp message to NSS firmware synchronously.
+  */
+-nss_tx_status_t nss_ppe_vp_tx_msg_sync(struct nss_ctx_instance *nss_ctx, struct nss_ppe_vp_msg *npvm)
++static nss_tx_status_t nss_ppe_vp_tx_msg_sync(struct nss_ctx_instance *nss_ctx, struct nss_ppe_vp_msg *npvm)
+ {
+ 	nss_tx_status_t status;
+ 	int ret = 0;
+@@ -777,7 +777,7 @@
+  * nss_ppe_vp_procfs_register()
+  *	Register sysctl specific to ppe_vp
+  */
+-void nss_ppe_vp_procfs_register(void)
++static void nss_ppe_vp_procfs_register(void)
+ {
+ 	/*
+ 	 * Register sysctl table.
+@@ -789,7 +789,7 @@
+  * uss_ppe_vp_procfs_unregister()
+  *	Unregister sysctl specific for ppe_vp
+  */
+-void nss_ppe_vp_procfs_unregister(void)
++static void nss_ppe_vp_procfs_unregister(void)
+ {
+ 	/*
+ 	 * Unregister sysctl table.
+--- a/nss_pppoe.c
++++ b/nss_pppoe.c
+@@ -203,7 +203,7 @@
+  * nss_pppoe_br_accel_mode_handler()
+  *	Enable/disable pppoe bridge acceleration in NSS
+  */
+-int nss_pppoe_br_accel_mode_handler(compat_const struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
++static int nss_pppoe_br_accel_mode_handler(compat_const struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+ {
+ 	struct nss_ctx_instance *nss_ctx = nss_pppoe_get_context();
+ 	struct nss_pppoe_msg npm;
+--- a/nss_pppoe_log.c
++++ b/nss_pppoe_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_pppoe_log.h"
+ 
+ /*
+  * nss_pppoe_log_message_types_str
+--- a/nss_pppoe_strings.c
++++ b/nss_pppoe_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_pppoe.h>
+ #include "nss_strings.h"
++#include "nss_pppoe_strings.h"
+ 
+ /*
+  * nss_pppoe_strings_session_stats
+--- a/nss_pptp.c
++++ b/nss_pptp.c
+@@ -43,7 +43,7 @@
+  * nss_pptp_session_debug_stats_sync
+  *	Per session debug stats for pptp
+  */
+-void nss_pptp_session_debug_stats_sync(struct nss_ctx_instance *nss_ctx,
++static void nss_pptp_session_debug_stats_sync(struct nss_ctx_instance *nss_ctx,
+ 				struct nss_pptp_sync_session_stats_msg *stats_msg, uint16_t if_num)
+ {
+ 	int i, j, if_type;
+--- a/nss_pptp_log.c
++++ b/nss_pptp_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_pptp_log.h"
+ 
+ /*
+  * nss_pptp_log_message_types_str
+--- a/nss_pptp_strings.c
++++ b/nss_pptp_strings.c
+@@ -20,6 +20,7 @@
+ #include "nss_core.h"
+ #include <nss_pptp.h>
+ #include "nss_strings.h"
++#include "nss_pptp_strings.h"
+ 
+ /*
+  * nss_pptp_strings_session_debug_stats
+--- a/nss_pvxlan_log.c
++++ b/nss_pvxlan_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_pvxlan_log.h"
+ 
+ /*
+  * nss_pvxlan_log_message_types_str
+--- a/nss_qrfs_log.c
++++ b/nss_qrfs_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_qrfs_log.h"
+ #define NSS_QRFS_LOG_IPV4 4
+ #define NSS_QRFS_LOG_IPV6 6
+ 
+--- a/nss_qvpn_log.c
++++ b/nss_qvpn_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_qvpn_log.h"
+ 
+ /*
+  * nss_qvpn_log_message_types_str
+--- a/nss_rmnet_rx.c
++++ b/nss_rmnet_rx.c
+@@ -44,7 +44,7 @@
+  * nss_rmnet_rx_verify_if_num()
+  *	Verify if_num passed to us.
+  */
+-bool nss_rmnet_rx_verify_if_num(uint32_t if_num)
++static bool nss_rmnet_rx_verify_if_num(uint32_t if_num)
+ {
+ 	enum nss_dynamic_interface_type type = nss_dynamic_interface_get_type(nss_rmnet_rx_get_context(), if_num);
+ 
+--- a/nss_rps.c
++++ b/nss_rps.c
+@@ -577,7 +577,7 @@
+  * nss_rps_pri_map_init_handler()
+  *	Initialize pri_map for priority based rps selection.
+  */
+-void nss_rps_pri_map_init_handler(void)
++static void nss_rps_pri_map_init_handler(void)
+ {
+ 	int i;
+ 
+--- a/nss_sjack_log.c
++++ b/nss_sjack_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_sjack_log.h"
+ 
+ /*
+  * nss_sjack_log_message_types_str
+--- a/nss_stats.h
++++ b/nss_stats.h
+@@ -72,6 +72,7 @@
+ void nss_stats_init(void);
+ extern int nss_stats_release(struct inode *inode, struct file *filp);
+ extern int nss_stats_open(struct inode *inode, struct file *filp);
++extern ssize_t nss_clear_stats_write(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos);
+ void nss_stats_create_dentry(char *name, const struct file_operations *ops);
+ extern void nss_stats_reset_common_stats(uint32_t if_num);
+ extern size_t nss_stats_fill_common_stats(uint32_t if_num, int instance, char *lbuf, size_t size_wr, size_t size_al, char *node);
+--- a/nss_tls_log.c
++++ b/nss_tls_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_tls_log.h"
+ 
+ /*
+  * nss_tls_log_message_types_str
+--- a/nss_trustsec_tx_log.c
++++ b/nss_trustsec_tx_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_trustsec_tx_log.h"
+ 
+ /*
+  * nss_trustsec_tx_log_message_types_str
+--- a/nss_tun6rd_log.c
++++ b/nss_tun6rd_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_tun6rd_log.h"
+ 
+ /*
+  * nss_tun6rd_log_message_types_str
+--- a/nss_tunipip6_log.c
++++ b/nss_tunipip6_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_tunipip6_log.h"
+ 
+ /*
+  * nss_tunipip6_log_message_types_str
+--- a/nss_tx_rx_common.h
++++ b/nss_tx_rx_common.h
+@@ -86,6 +86,7 @@
+ extern struct net_device *nss_tstamp_register_netdev(void);
+ extern void nss_tstamp_register_handler(struct net_device *ndev);
+ extern void nss_portid_register_handler(void);
++extern void nss_portid_init(void);
+ extern void nss_oam_register_handler(void);
+ extern void nss_dtls_register_handler(void);
+ extern void nss_dtls_cmn_register_handler(void);
+@@ -96,6 +97,7 @@
+ extern void nss_ppe_register_handler(void);
+ extern void nss_gre_redir_mark_register_handler(void);
+ extern void nss_ppe_vp_register_handler(void);
++extern void nss_ppe_vp_unregister_handler(void);
+ extern void nss_wifi_mac_db_register_handler(void);
+ extern void nss_wifi_ext_vdev_register_handler(void);
+ extern void nss_wifili_thread_scheme_db_init(uint8_t core_id);
+--- a/nss_udp_st_log.c
++++ b/nss_udp_st_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_udp_st_log.h"
+ 
+ /*
+  * nss_udp_st_log_message_types_str
+--- a/nss_udp_st_strings.c
++++ b/nss_udp_st_strings.c
+@@ -19,6 +19,7 @@
+ #include "nss_stats.h"
+ #include "nss_core.h"
+ #include <nss_udp_st.h>
++#include "nss_udp_st_strings.h"
+ #include "nss_strings.h"
+ 
+ /*
+--- a/nss_unaligned_log.c
++++ b/nss_unaligned_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_unaligned_log.h"
+ 
+ /*
+  * nss_unaligned_log_message_types_str
+--- a/nss_virt_if_stats.c
++++ b/nss_virt_if_stats.c
+@@ -130,7 +130,7 @@
+  * nss_virt_if_stats_get()
+  *	Get virt_if base node stats or interface stats by interface number.
+  */
+-bool nss_virt_if_stats_get(struct nss_ctx_instance *nss_ctx, uint32_t if_num, void *stats, bool is_base)
++static bool nss_virt_if_stats_get(struct nss_ctx_instance *nss_ctx, uint32_t if_num, void *stats, bool is_base)
+ {
+ 	if (nss_virt_if_verify_if_num(if_num) == false) {
+ 		return false;
+--- a/nss_vlan_log.c
++++ b/nss_vlan_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_vlan_log.h"
+ 
+ /*
+  * nss_vlan_log_message_types_str
+--- a/nss_vxlan_log.c
++++ b/nss_vxlan_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_vxlan_log.h"
+ 
+ /*
+  * nss_vxlan_log_message_types_str
+--- a/nss_wifi_ext_vdev_log.c
++++ b/nss_wifi_ext_vdev_log.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_wifi_ext_vdev_log.h"
+ 
+ #define NSS_WIFI_EXT_VDEV_LOG_MESSAGE_TYPE_INDEX(type) ((type) - NSS_IF_MAX_MSG_TYPES)
+ 
+--- a/nss_wifi_log.c
++++ b/nss_wifi_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_wifi_log.h"
+ 
+ /*
+  * nss_wifi_log_message_types_str
+--- a/nss_wifi_mac_db.c
++++ b/nss_wifi_mac_db.c
+@@ -17,6 +17,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_tx_rx_common.h"
+ #include "nss_wifi_mac_db_if.h"
+ 
+ /*
+--- a/nss_wifi_mesh_log.c
++++ b/nss_wifi_mesh_log.c
+@@ -23,6 +23,7 @@
+ 
+ #include "nss_core.h"
+ #include "nss_wifi_mesh.h"
++#include "nss_wifi_mesh_log.h"
+ 
+ #define NSS_WIFI_MESH_LOG_MESSAGE_TYPE_INDEX(type) ((type) - NSS_IF_MAX_MSG_TYPES)
+ 
+--- a/nss_wifili_log.c
++++ b/nss_wifili_log.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "nss_core.h"
++#include "nss_wifili_log.h"
+ 
+ /*
+  * nss_wifili_log_message_types_str
+--- a/nss_wifili_stats.c
++++ b/nss_wifili_stats.c
+@@ -40,7 +40,7 @@
+  * nss_wifili_target_type_string()
+  * 	Convert Target Type Integer to String
+  */
+-void nss_wifili_target_type_to_string(uint32_t target_type, char *target_type_str)
++static void nss_wifili_target_type_to_string(uint32_t target_type, char *target_type_str)
+ {
+ 	switch (target_type) {
+ 

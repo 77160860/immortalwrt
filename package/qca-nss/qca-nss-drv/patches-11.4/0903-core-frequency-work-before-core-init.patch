@@ -1,0 +1,58 @@
+From: OpenWrt Build System <openwrt@localhost>
+Subject: [PATCH] nss-drv 11.4: reject frequency work before core init
+
+--- a/nss_hal/ipq60xx/nss_hal_pvt.c
++++ b/nss_hal/ipq60xx/nss_hal_pvt.c
+@@ -139,6 +139,13 @@
+ void nss_hal_wq_function(struct work_struct *work)
+ {
+ 	nss_work_t *my_work = (nss_work_t *)work;
++
++	if (unlikely(nss_top_main.nss[NSS_CORE_0].state !=
++			NSS_CORE_STATE_INITIALIZED)) {
++		nss_warning("frequency request before IPQ60xx NSS core initialization\n");
++		kfree((void *)work);
++		return;
++	}
+ 
+ 	mutex_lock(&nss_top_main.wq_lock);
+ 
+--- a/nss_hal/ipq807x/nss_hal_pvt.c
++++ b/nss_hal/ipq807x/nss_hal_pvt.c
+@@ -145,6 +145,13 @@
+ void nss_hal_wq_function(struct work_struct *work)
+ {
+ 	nss_work_t *my_work = (nss_work_t *)work;
++
++	if (unlikely(nss_top_main.nss[NSS_CORE_0].state !=
++			NSS_CORE_STATE_INITIALIZED || !npu_reg)) {
++		nss_warning("frequency request before IPQ807x NSS core initialization\n");
++		kfree((void *)work);
++		return;
++	}
+ 
+ 	mutex_lock(&nss_top_main.wq_lock);
+ 
+--- a/nss_init.c
++++ b/nss_init.c
+@@ -189,6 +189,10 @@
+ 		return ret;
+ 	}
+ 
++	/* Delayed probe can expose this sysctl before the core is ready. */
++	if (nss_top_main.nss[NSS_CORE_0].state != NSS_CORE_STATE_INITIALIZED)
++		return ret;
++
+ 	/*
+ 	 * Check if frequency exists in frequency Table
+ 	 */
+@@ -253,6 +257,9 @@
+ 	if (!nss_wq) {
+ 		return ret;
+ 	}
++
++	if (nss_top_main.nss[NSS_CORE_0].state != NSS_CORE_STATE_INITIALIZED)
++		return ret;
+ 
+ 	if (nss_cmd_buf.auto_scale != 1) {
+ 		/*
