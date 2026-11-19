@@ -108,7 +108,7 @@ Signed-off-by: Julius Bairaktaris <julius@bairaktaris.de>
  				    &fops_tx_stats);
 --- a/drivers/net/wireless/ath/ath11k/nss.c
 +++ b/drivers/net/wireless/ath/ath11k/nss.c
-@@ -206,6 +206,27 @@ static void ath11k_nss_get_peer_stats(st
+@@ -206,6 +206,29 @@ static void ath11k_nss_get_peer_stats(st
  			pstats->rx.err.decrypt_err;
  		peer->nss.nss_stats->rx_dropped += rx_dropped;
  
@@ -120,10 +120,12 @@ Signed-off-by: Julius Bairaktaris <julius@bairaktaris.de>
 +			pstats->retry.tx_failed_retry_count;
 +		peer->nss.nss_stats->tx_multiple_retries +=
 +			pstats->retry.tx_multiple_retry_count;
++#ifdef NSS_FIRMWARE_VERSION_12_5
 +		peer->nss.nss_stats->tx_mpdu_retries +=
 +			pstats->retry.tx_mpdu_retry_count;
 +		peer->nss.nss_stats->tx_mpdu_total_retries +=
 +			pstats->retry.tx_mpdu_total_retry_count;
++#endif
 +		peer->nss.nss_stats->rx_retries += pstats->retry.rx_retry_count;
 +#endif
 +		peer->nss.nss_stats->rx_amsdu += pstats->rx.amsdu_cnt;
