@@ -1,0 +1,20 @@
+--- a/ecm_interface.c
++++ b/ecm_interface.c
+@@ -9044,7 +9044,7 @@
+ 	saddr.nl_family = AF_NETLINK;
+ 	saddr.nl_pid    = current->pid;
+ 
+-	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
++	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr_unsized *)&saddr, sizeof(struct sockaddr));
+ 	if (err < 0) {
+ 		DEBUG_ERROR("failed to bind sock err %d\n", err);
+ 		goto exit2;
+@@ -9274,7 +9274,7 @@
+ 	saddr.nl_groups = RTNLGRP_LINK;
+ 	saddr.nl_pid    = current->pid;
+ 
+-	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
++	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr_unsized *)&saddr, sizeof(struct sockaddr));
+ 	if (err < 0) {
+ 		DEBUG_ERROR("failed to bind sock\n");
+ 		goto exit2;
